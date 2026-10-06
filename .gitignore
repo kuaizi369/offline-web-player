@@ -1,0 +1,27 @@
+# ── 本地个人配置（含本机路径 / 播放器路径，不入库） ─────
+# 需要改配置时，先 `cp config.example.json config.json`
+config.json
+
+# ── WorkBuddy 工作资料（笔记、本地回归测试，不入库） ─────
+.workbuddy/
+
+# ── 运行时缓存（可再生，不入库） ─────────────────────────
+genre-cache.json
+
+# ── 临时产物 / 调试截图 ─────────────────────────────────
+ScreenShot_*.png
+Screenshot_*.png
+*.log
+*.tmp
+*.bak
+
+# ── 编辑器 / 系统 ───────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ── Node（本项目零依赖，仅作兜底） ───────────────────────
+node_modules/
+npm-debug.log*

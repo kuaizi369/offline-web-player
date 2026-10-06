@@ -1,0 +1,78 @@
+{
+  "//": "═══ 离线网页播放器 · 配置模板 ═══",
+  "//how": "复制本文件为 config.json 后按需修改。若直接启动，程序会自动读取本文件作为默认配置，并在你首次于页面上添加扫描目录时生成 config.json。",
+  "//note": "所有以 \"//\" 开头的键都是注释，程序会原样保留，可放心增删。",
+
+  "//port": "本地服务端口。被占用时改一个即可。",
+  "port": 8787,
+
+  "//autoOpenBrowser": "启动后是否自动打开浏览器。",
+  "autoOpenBrowser": true,
+
+  "//scanOnStart": "启动后是否自动扫描媒体库。",
+  "scanOnStart": true,
+
+  "//systemPlayer": "「系统播放」按钮调用的播放器完整路径。留空字符串则改用系统文件关联的默认程序。",
+  "//systemPlayer.example": "Windows 例：\"D:/Apps/PotPlayer/MiniPlayer64.exe\"；macOS 例：\"/Applications/VLC.app/Contents/MacOS/VLC\"。播放器装在 C 盘 Program Files 下通常无需填写，留空走文件关联即可。",
+  "systemPlayer": "",
+
+  "//roots": "媒体库根目录。留空数组 = 只扫描本程序所在目录及其子目录。也可以在页面上点「＋ 添加目录」可视化选择，无需手动编辑。",
+  "//roots.item": "每项：path=绝对路径，label=显示名称（可选），group=所属分组（音乐 / 视频 / 本地）",
+  "roots": [],
+
+  "//excludeDirs": "扫描时跳过的目录名（不区分大小写）。",
+  "excludeDirs": [
+    "node_modules",
+    ".git",
+    ".workbuddy",
+    "$RECYCLE.BIN",
+    "System Volume Information",
+    "Program Files",
+    "Program Files (x86)",
+    "字体",
+    "fonts"
+  ],
+
+  "//minSizeKB": "小于该体积的文件视为音效 / 资源，不计入媒体库（0 = 不过滤）。",
+  "minSizeKB": 30,
+
+  "//familyKeywords": "「家族 family」分类的关键词，命中即自动归入该分类。为避免歌曲名被误判，请只使用「明确指向家庭影像」的词——不要用「爸爸」「妈妈」「孩子」这类会出现在歌名里的词。",
+  "familyKeywords": [
+    "family",
+    "家族",
+    "家庭录像",
+    "家庭视频",
+    "家庭相册",
+    "家庭聚会",
+    "家庭影像",
+    "全家福",
+    "我的家人",
+    "爸爸妈妈",
+    "老爸老妈",
+    "亲子",
+    "成长记录",
+    "婚礼录像",
+    "生日录像",
+    "婚庆",
+    "满月酒",
+    "周岁宴",
+    "团圆饭"
+  ],
+
+  "//tags": "智能标签规则。name=标签名，keywords=命中的关键词（匹配路径或文件名，不区分大小写）。",
+  "tags": [
+    { "name": "抖音热歌", "keywords": ["抖音", "douyin", "tiktok", "热歌", "remix"] },
+    { "name": "DJ 舞曲", "keywords": ["dj", "舞曲", "电音", "串烧", "慢摇", "蹦迪"] },
+    { "name": "怀旧金曲", "keywords": ["怀旧", "经典", "老歌", "金曲", "典藏", "粤语老歌"] },
+    { "name": "粤语", "keywords": ["粤语", "广东话", "港乐"] },
+    { "name": "草原天籁", "keywords": ["草原", "天籁", "蒙古", "马头琴", "青藏", "高原"] },
+    { "name": "民谣", "keywords": ["民谣", "folk", "吉他"] },
+    { "name": "纯音乐 / 伴奏", "keywords": ["纯音乐", "伴奏", "口哨", "钢琴", "轻音乐", "instrumental", "哼唱", "古筝", "二胡"] },
+    { "name": "对唱 / 合唱", "keywords": ["对唱", "合唱", "群星", "various artists"] },
+    { "name": "外语 / 欧美", "keywords": ["英文", "英文歌", "欧美", "jazz", "blues", "蓝调"] },
+    { "name": "自然 / 疗愈", "keywords": ["大自然", "雨声", "海浪", "鸟鸣", "白噪音", "冥想", "催眠", "轻音"] },
+    { "name": "MV / 现场", "keywords": ["mv", "现场", "live", "演唱会", "1080p", "4k"] },
+    { "name": "教程 / 课程", "keywords": ["教程", "课程", "学习", "教学", "第", "课"] },
+    { "name": "剧集 / 影视", "keywords": ["第一集", "剧集", "国语", "中字", "hd", "无水印"] }
+  ]
+}

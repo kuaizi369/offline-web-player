@@ -1,0 +1,21 @@
+# 统一换行符策略：仓库内一律 LF，检出时按平台还原
+* text=auto
+
+# Windows 批处理必须是 CRLF，否则 cmd 解析会出错
+*.bat text eol=crlf
+
+# 源码 / 文本
+*.js   text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+
+# 二进制，禁止任何转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.mp3 binary
+*.mp4 binary

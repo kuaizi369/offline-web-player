@@ -1,0 +1,2132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>离线音乐与视频播放器</title>
+<style>
+/* ══════════════════════════  设计令牌  ══════════════════════════ */
+:root{
+  --bg:#0B0D11;
+  --panel:#11141A;
+  --panel-2:#171B23;
+  --panel-3:#1E232D;
+  --line:rgba(255,255,255,.075);
+  --line-strong:rgba(255,255,255,.14);
+  --text:#E9ECF3;
+  --text-2:#A6AEC0;
+  --muted:#6C7488;
+  --accent:#7C5CFF;
+  --accent-soft:rgba(124,92,255,.16);
+  --accent-2:#22D3EE;
+  --warm:#FFB26B;
+  --good:#45D483;
+  --bar-h:88px;
+  --r-s:8px; --r-m:12px; --r-l:18px;
+  --ease:cubic-bezier(.32,.72,0,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:"PingFang SC","Microsoft YaHei","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:14px;
+  line-height:1.5;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select{font:inherit;color:inherit}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border-radius:10px;border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.20);background-clip:content-box}
+
+/* ══════════════════════════  骨架  ══════════════════════════ */
+.app{display:grid;grid-template-columns:264px 1fr;height:100vh}
+
+/* ── 侧栏 ── */
+.side{
+  background:var(--panel);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;
+}
+.brand{padding:20px 18px 16px;display:flex;align-items:center;gap:11px;flex:none}
+.brand-mark{
+  width:34px;height:34px;border-radius:10px;flex:none;
+  background:linear-gradient(135deg,var(--accent),var(--accent-2));
+  display:grid;place-items:center;box-shadow:0 6px 18px -6px rgba(124,92,255,.7);
+}
+.brand-mark svg{width:18px;height:18px}
+.brand-txt strong{display:block;font-size:13.5px;font-weight:600;letter-spacing:.2px}
+.brand-txt span{font-size:11px;color:var(--muted)}
+
+.nav{padding:0 10px;flex:none}
+.nav-label{font-size:11px;color:var(--muted);padding:14px 10px 6px;letter-spacing:.6px;font-weight:500}
+.nav-item{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:8px 10px;border-radius:var(--r-s);
+  color:var(--text-2);font-size:13px;text-align:left;
+  transition:background .15s,color .15s;
+}
+.nav-item:hover{background:var(--panel-2);color:var(--text)}
+.nav-item.on{background:var(--accent-soft);color:#C9BCFF}
+.nav-item.on .nav-dot{background:var(--accent)}
+.nav-dot{width:6px;height:6px;border-radius:50%;background:var(--line-strong);flex:none;transition:background .15s}
+.nav-item .cnt{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* 专辑列表 */
+.album-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 10px 16px}
+.album-pill{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:7px 10px;border-radius:var(--r-s);text-align:left;
+  color:var(--text-2);font-size:12.5px;transition:background .15s,color .15s;
+}
+.album-pill:hover{background:var(--panel-2);color:var(--text)}
+.album-pill.on{background:var(--panel-3);color:var(--text)}
+.album-pill .sw{width:9px;height:9px;border-radius:3px;flex:none}
+.album-pill .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.album-pill .cnt{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+/* ── 主区 ── */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--bg)}
+.topbar{
+  flex:none;display:flex;align-items:center;gap:12px;
+  padding:14px 22px;border-bottom:1px solid var(--line);
+  background:rgba(11,13,17,.86);backdrop-filter:blur(14px);
+}
+.search{
+  flex:1;max-width:460px;position:relative;display:flex;align-items:center;
+}
+.search svg{position:absolute;left:12px;width:15px;height:15px;color:var(--muted);pointer-events:none}
+.search input{
+  width:100%;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:10px;padding:9px 34px 9px 35px;outline:none;
+  transition:border-color .18s,background .18s;
+}
+.search input::placeholder{color:var(--muted)}
+.search input:focus{border-color:rgba(124,92,255,.55);background:var(--panel-3)}
+.search .clr{position:absolute;right:10px;color:var(--muted);display:none;padding:2px}
+.search .clr:hover{color:var(--text)}
+.search.has .clr{display:block}
+
+.seg{display:flex;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{padding:5px 12px;border-radius:7px;font-size:12.5px;color:var(--text-2);transition:.15s}
+.seg button:hover{color:var(--text)}
+.seg button.on{background:var(--panel-3);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+
+.sel{
+  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:8px 10px;outline:none;cursor:pointer;font-size:12.5px;color:var(--text-2);
+}
+.sel:hover{border-color:var(--line-strong)}
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  background:var(--panel-2);border:1px solid var(--line);
+  border-radius:10px;padding:8px 13px;font-size:12.5px;color:var(--text-2);
+  transition:.15s;white-space:nowrap;
+}
+.btn:hover{background:var(--panel-3);color:var(--text);border-color:var(--line-strong)}
+.btn svg{width:14px;height:14px}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#6A46F0);border-color:transparent;color:#fff;font-weight:500}
+.btn.primary:hover{filter:brightness(1.1)}
+
+/* 内容区 */
+.content{flex:1;min-height:0;overflow-y:auto;padding:22px 22px 30px}
+.hero{display:flex;align-items:flex-end;gap:18px;margin-bottom:22px}
+.hero-cover{
+  width:118px;height:118px;border-radius:var(--r-m);flex:none;
+  display:grid;place-items:center;font-size:40px;font-weight:700;color:rgba(255,255,255,.9);
+  box-shadow:0 16px 40px -14px rgba(0,0,0,.75);position:relative;overflow:hidden;
+}
+.hero-cover::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.16),transparent 55%)}
+.hero-meta{min-width:0}
+.hero-meta .kick{font-size:11px;color:var(--accent-2);letter-spacing:.8px;font-weight:600;text-transform:uppercase}
+.hero-meta h1{font-size:26px;font-weight:650;letter-spacing:-.4px;margin:6px 0 8px;line-height:1.15}
+.hero-meta .sub{font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.hero-meta .sub i{font-style:normal;opacity:.4}
+.hero-actions{display:flex;gap:9px;margin-top:14px}
+
+/* 专辑网格 */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:16px}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-m);
+  padding:12px;text-align:left;transition:transform .2s var(--ease),border-color .2s,background .2s;
+  display:flex;flex-direction:column;gap:11px;
+}
+.card:hover{transform:translateY(-3px);border-color:var(--line-strong);background:var(--panel-2)}
+.card-cover{
+  aspect-ratio:1;border-radius:var(--r-s);position:relative;overflow:hidden;
+  display:grid;place-items:center;font-size:32px;font-weight:700;color:rgba(255,255,255,.92);
+}
+.card-cover::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.18),transparent 60%)}
+.card-cover .play{
+  position:absolute;inset:0;display:grid;place-items:center;
+  background:rgba(0,0,0,.42);opacity:0;transition:opacity .2s;
+}
+.card:hover .card-cover .play{opacity:1}
+.card-cover .play span{
+  width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.94);
+  display:grid;place-items:center;
+}
+.card-cover .play svg{width:18px;height:18px;color:#0B0D11;margin-left:2px}
+.card-cover .badge{
+  position:absolute;top:8px;right:8px;z-index:2;
+  background:rgba(0,0,0,.55);backdrop-filter:blur(6px);
+  border-radius:6px;padding:2px 7px;font-size:10.5px;color:#fff;font-weight:500;
+}
+.card h3{font-size:13.5px;font-weight:550;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.card .cm{font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.card .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
+.chip{
+  font-size:10.5px;padding:2px 7px;border-radius:20px;
+  background:var(--panel-3);color:var(--text-2);border:1px solid var(--line);
+  white-space:nowrap;
+}
+.chip.on{background:var(--accent-soft);color:#C9BCFF;border-color:rgba(124,92,255,.4)}
+
+/* 标签条 */
+.tagbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px}
+.tagbar .chip{cursor:pointer;transition:.15s;font-size:11.5px;padding:4px 11px}
+.tagbar .chip:hover{border-color:var(--line-strong);color:var(--text)}
+
+/* 列表 */
+.tlist{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+.tlist thead th{
+  position:sticky;top:0;z-index:3;
+  background:var(--bg);border-bottom:1px solid var(--line);
+  font-size:11px;font-weight:500;color:var(--muted);text-align:left;
+  padding:9px 12px;letter-spacing:.4px;
+}
+.tlist thead th.num{text-align:right}
+.tlist td{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.035);font-size:13px;vertical-align:middle}
+.tlist tbody tr{cursor:default;transition:background .12s}
+.tlist tbody tr:hover{background:var(--panel-2)}
+.tlist tbody tr.cur{background:var(--accent-soft)}
+.tlist tbody tr.cur .ttl{color:#C9BCFF}
+.idx{width:44px;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums;text-align:right}
+.idx .eq{display:inline-flex;gap:2px;align-items:flex-end;height:12px}
+.idx .eq i{width:2px;background:var(--accent-2);border-radius:2px;animation:eq .9s var(--ease) infinite}
+.idx .eq i:nth-child(1){height:40%;animation-delay:-.2s}
+.idx .eq i:nth-child(2){height:100%;animation-delay:-.5s}
+.idx .eq i:nth-child(3){height:65%}
+@keyframes eq{0%,100%{transform:scaleY(.35)}50%{transform:scaleY(1)}}
+.ttl{font-weight:450;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ttl .tg{font-size:10px;padding:1px 6px;border-radius:20px;background:var(--panel-3);color:var(--muted);margin-left:7px;vertical-align:1px;white-space:nowrap}
+.art{color:var(--text-2);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.talbum{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dur,.size{color:var(--muted);font-size:11.5px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.acts{width:132px;text-align:right;white-space:nowrap}
+.ico{
+  width:27px;height:27px;border-radius:7px;display:inline-grid;place-items:center;
+  color:var(--muted);transition:.15s;vertical-align:middle;
+}
+.ico:hover{background:var(--panel-3);color:var(--text)}
+.ico svg{width:14px;height:14px}
+.empty{padding:70px 20px;text-align:center;color:var(--muted)}
+.empty svg{width:38px;height:38px;opacity:.35;margin-bottom:14px}
+.empty p{font-size:13px}
+
+/* ══════════════════════════  播放条  ══════════════════════════ */
+.player{
+  flex:none;height:var(--bar-h);border-top:1px solid var(--line);
+  background:var(--panel);display:flex;align-items:center;gap:20px;
+  padding:0 20px;position:relative;z-index:20;
+}
+.now{display:flex;align-items:center;gap:12px;width:290px;flex:none;min-width:0}
+.now-cover{
+  width:52px;height:52px;border-radius:var(--r-s);flex:none;position:relative;overflow:hidden;
+  display:grid;place-items:center;font-size:17px;font-weight:700;color:rgba(255,255,255,.92);
+  background:var(--panel-3);
+}
+.now-cover::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.16),transparent 60%)}
+.now-txt{min-width:0}
+.now-txt b{display:block;font-size:13px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.now-txt span{display:block;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px}
+
+.ctrls{display:flex;align-items:center;gap:6px;flex:none}
+.cbtn{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:var(--text-2);transition:.15s}
+.cbtn:hover{background:var(--panel-2);color:var(--text)}
+.cbtn svg{width:17px;height:17px}
+.cbtn.on{color:var(--accent-2)}
+.cbtn.play{
+  width:42px;height:42px;background:#fff;color:#0B0D11;margin:0 4px;
+  box-shadow:0 6px 18px -8px rgba(255,255,255,.5);
+}
+.cbtn.play:hover{background:#fff;transform:scale(1.05)}
+.cbtn.play svg{width:19px;height:19px}
+.cbtn:disabled{opacity:.3;pointer-events:none}
+
+.seek{flex:1;display:flex;align-items:center;gap:12px;min-width:120px}
+.time{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;width:42px;flex:none}
+.time.r{text-align:right}
+.rail{
+  flex:1;height:16px;display:flex;align-items:center;cursor:pointer;position:relative;
+}
+.rail .track{height:4px;width:100%;background:var(--panel-3);border-radius:3px;overflow:hidden;position:relative}
+.rail .fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2));width:0%;border-radius:3px}
+.rail .knob{
+  position:absolute;width:11px;height:11px;border-radius:50%;background:#fff;
+  left:0;transform:translateX(-50%) scale(0);transition:transform .18s;box-shadow:0 2px 6px rgba(0,0,0,.5);
+}
+.rail:hover .knob{transform:translateX(-50%) scale(1)}
+
+.right{display:flex;align-items:center;gap:8px;flex:none}
+.vol{display:flex;align-items:center;gap:8px;width:118px}
+.vol .rail{flex:1}
+.vol .rail .fill{background:var(--text-2)}
+.dot-badge{
+  position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;padding:0 4px;
+  border-radius:9px;background:var(--accent);color:#fff;font-size:9.5px;
+  display:grid;place-items:center;font-weight:600;
+}
+.rel{position:relative;display:inline-grid;place-items:center}
+
+/* ══════════════════════════  队列抽屉  ══════════════════════════ */
+.drawer{
+  position:fixed;top:0;right:0;bottom:var(--bar-h);width:372px;z-index:30;
+  background:var(--panel);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .3s var(--ease);
+  box-shadow:-24px 0 60px -30px rgba(0,0,0,.8);
+}
+.drawer.open{transform:translateX(0)}
+.drawer-hd{
+  flex:none;padding:16px 18px;border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:10px;
+}
+.drawer-hd h2{font-size:14px;font-weight:600;flex:1}
+.drawer-hd .cnt{font-size:11.5px;color:var(--muted)}
+.qlist{flex:1;min-height:0;overflow-y:auto;padding:8px}
+.qrow{
+  display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--r-s);
+  transition:background .13s;cursor:grab;
+}
+.qrow:hover{background:var(--panel-2)}
+.qrow.cur{background:var(--accent-soft)}
+.qrow.drag{opacity:.4}
+.qrow.over{border-top:2px solid var(--accent)}
+.qrow .qi{width:20px;font-size:11px;color:var(--muted);text-align:right;flex:none;font-variant-numeric:tabular-nums}
+.qrow .qt{flex:1;min-width:0}
+.qrow .qt b{display:block;font-size:12.5px;font-weight:450;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrow .qt span{display:block;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qrow .qx{opacity:0;color:var(--muted);padding:3px;border-radius:6px;transition:.15s}
+.qrow:hover .qx{opacity:1}
+.qrow .qx:hover{color:#FF7A7A;background:var(--panel-3)}
+
+/* ══════════════════════════  视频模态  ══════════════════════════ */
+.modal{
+  position:fixed;inset:0;z-index:60;background:rgba(4,5,7,.88);
+  backdrop-filter:blur(10px);display:none;place-items:center;padding:34px;
+}
+.modal.open{display:grid}
+.modal-in{width:100%;max-width:1120px;display:flex;flex-direction:column;gap:13px}
+.modal-hd{display:flex;align-items:center;gap:14px}
+.modal-hd h2{font-size:15px;font-weight:550;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modal video{width:100%;max-height:74vh;background:#000;border-radius:var(--r-m);border:1px solid var(--line-strong)}
+.modal .fallback{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-m);
+  padding:34px;text-align:center;display:none;
+}
+.modal.unsupported video{display:none}
+
+/* 曲风补全按钮 */
+.gnbtn{font-size:10.5px;padding:2px 9px;border-radius:20px;border:1px solid var(--line-strong);background:var(--panel-2);color:var(--text-2);cursor:pointer;transition:.15s;font-family:inherit}
+.gnbtn:hover:not(:disabled){color:var(--text);border-color:var(--accent)}
+.gnbtn:disabled{opacity:.55;cursor:default}
+/* 曲风徽标（区别于普通标签的紫色调） */
+.ttl .tg.gtag{background:rgba(124,92,255,.16);color:#B7A6FF}
+/* 删除按钮悬停警示色 */
+.tlist .ico[data-a="del"]:hover{color:#FF6B6B}
+.modal.unsupported .fallback{display:block}
+
+/* ══════════════════════════  扫描目录  ══════════════════════════ */
+.rlist{flex:none;max-height:164px;overflow-y:auto;padding:0 10px 2px}
+.root-pill{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:6px 8px 6px 10px;border-radius:var(--r-s);
+  color:var(--text-2);font-size:12.5px;text-align:left;transition:background .15s,color .15s;
+}
+.root-pill:hover{background:var(--panel-2);color:var(--text)}
+.root-pill.on{background:var(--panel-3);color:var(--text)}
+.root-pill.on .rp-ico{background:var(--accent-2);opacity:1}
+.root-pill .rp-ico{width:9px;height:9px;border-radius:3px;flex:none;background:var(--accent);opacity:.8}
+.root-pill.missing .rp-ico{background:var(--warm);opacity:1}
+.root-pill.def .rp-ico{background:var(--muted)}
+.root-pill .rp-txt{flex:1;min-width:0}
+.root-pill .rp-nm{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.root-pill .rp-sub{display:block;font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.root-pill .rp-cnt{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+.root-pill .rp-x{
+  flex:none;width:19px;height:19px;border-radius:5px;display:grid;place-items:center;
+  color:var(--muted);opacity:0;transition:.15s;
+}
+.root-pill:hover .rp-x{opacity:1}
+.root-pill .rp-x:hover{background:#E5484D;color:#fff}
+.rlist-foot{display:flex;gap:6px;padding:3px 10px 8px;flex:none}
+.rlist-foot .mini{
+  flex:1;text-align:center;font-size:11px;color:var(--muted);
+  padding:5px 4px;border:1px solid var(--line);border-radius:8px;transition:.15s;
+}
+.rlist-foot .mini:hover{color:var(--text);border-color:var(--line-strong);background:var(--panel-2)}
+.rlist .empty-hint{padding:8px 10px;color:var(--muted);font-size:11.5px;line-height:1.7}
+
+/* ── 目录选择器 ── */
+.dir-wrap{display:flex;flex-direction:column;gap:10px;min-height:0}
+.dir-bar{display:flex;gap:8px;align-items:center}
+.dir-bar input{
+  flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
+  padding:8px 11px;font-size:12.5px;color:var(--text);outline:none;font-family:inherit;
+}
+.dir-bar input:focus{border-color:rgba(124,92,255,.55);background:var(--panel-3)}
+.dir-crumb{font-size:11.5px;color:var(--muted);line-height:1.9;word-break:break-all}
+.dir-crumb b{color:var(--text-2);font-weight:500}
+.dir-list{
+  height:296px;overflow:auto;background:var(--panel-2);
+  border:1px solid var(--line);border-radius:var(--r-s);padding:6px;
+}
+.dir-row{
+  display:flex;align-items:center;gap:9px;width:100%;
+  padding:7px 9px;border-radius:8px;color:var(--text-2);font-size:12.5px;text-align:left;transition:.12s;
+}
+.dir-row:hover{background:var(--panel-3);color:var(--text)}
+.dir-row .di{width:15px;height:15px;flex:none;color:var(--accent-2);opacity:.85}
+.dir-row.warn .di{color:var(--warm)}
+.dir-row .dn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dir-row .dtag{font-size:10px;padding:1px 6px;border-radius:20px;background:var(--panel);color:var(--muted);flex:none}
+.dir-row .dadd{
+  font-size:11px;padding:2px 8px;border-radius:6px;flex:none;
+  border:1px solid var(--line-strong);color:var(--text-2);transition:.15s;
+}
+.dir-row .dadd:hover{border-color:var(--accent);background:var(--accent);color:#fff}
+.dir-row.disabled{opacity:.45;cursor:default}
+.dir-empty{padding:26px 14px;text-align:center;color:var(--muted);font-size:12px;line-height:1.9}
+.dir-foot{display:flex;gap:9px;align-items:center;border-top:1px solid var(--line);padding-top:12px;flex-wrap:wrap}
+.dir-foot input{
+  width:168px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;
+  padding:8px 11px;font-size:12.5px;color:var(--text);outline:none;font-family:inherit;
+}
+.dir-foot input:focus{border-color:rgba(124,92,255,.55)}
+.dir-foot .grow{flex:1}
+.dir-note{
+  font-size:11.5px;color:var(--muted);line-height:1.8;
+  background:var(--panel-2);border:1px solid var(--line);border-left:2px solid var(--accent);
+  border-radius:var(--r-s);padding:9px 12px;
+}
+.dir-note b{color:var(--text-2);font-weight:500}
+.dir-note.warn{border-left-color:var(--warm)}
+
+/* ══════════════════════════  提示 / 遮罩  ══════════════════════════ */
+.toasts{position:fixed;bottom:calc(var(--bar-h) + 16px);left:50%;transform:translateX(-50%);z-index:80;
+  display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{
+  background:var(--panel-3);border:1px solid var(--line-strong);border-radius:10px;
+  padding:9px 16px;font-size:12.5px;box-shadow:0 14px 34px -14px rgba(0,0,0,.85);
+  animation:tin .28s var(--ease);
+}
+.toast.err{border-color:rgba(255,122,122,.5);color:#FFC9C9}
+.toast.ok{border-color:rgba(69,212,131,.45)}
+@keyframes tin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+.boot{
+  position:fixed;inset:0;z-index:90;background:var(--bg);
+  display:grid;place-items:center;text-align:center;padding:30px;
+}
+.boot .spin{
+  width:32px;height:32px;border-radius:50%;margin:0 auto 18px;
+  border:2.5px solid var(--line-strong);border-top-color:var(--accent);animation:sp .8s linear infinite;
+}
+@keyframes sp{to{transform:rotate(360deg)}}
+.boot h2{font-size:16px;font-weight:600;margin-bottom:8px}
+.boot p{font-size:13px;color:var(--muted);max-width:440px;margin:0 auto;line-height:1.75}
+.boot code{background:var(--panel-3);padding:2px 7px;border-radius:5px;font-size:12px;color:var(--accent-2)}
+.boot.hide{display:none}
+.kbd{display:inline-block;background:var(--panel-3);border:1px solid var(--line-strong);
+  border-radius:4px;padding:0 5px;font-size:11px;color:var(--text-2);line-height:17px}
+
+@media(max-width:1180px){
+  .now{width:210px}
+  .vol{width:0;overflow:hidden;opacity:0}
+}
+@media(max-width:900px){
+  .app{grid-template-columns:0 1fr}
+  .side{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ══════ 侧栏 ══════ -->
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+        </svg>
+      </div>
+      <div class="brand-txt">
+        <strong>离线播放器</strong>
+        <span id="sideStat">正在载入媒体库…</span>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav"></nav>
+
+    <div class="nav-label" style="padding:16px 10px 6px;display:flex;align-items:center;justify-content:space-between">
+      <span>扫描目录</span>
+      <button class="gnbtn" id="rootAdd" title="选择要扫描的目录（只扫描你添加的目录，不做全盘扫描）">＋ 添加目录</button>
+    </div>
+    <div class="rlist" id="rootNav"></div>
+    <div class="rlist-foot">
+      <button class="mini" id="rootReset" title="清空全部扫描目录，恢复为「只扫描播放器所在目录及其子目录」">↺ 恢复默认（仅本目录）</button>
+    </div>
+
+    <div class="nav-label" style="padding:16px 20px 6px;display:flex;align-items:center;justify-content:space-between">
+      <span>曲风</span>
+      <button class="gnbtn" id="genreSync" title="对「未识别」的歌曲联网查询曲风（iTunes 资料库，结果会缓存）">☁ 联网补全</button>
+    </div>
+    <div class="album-scroll" id="genreNav"></div>
+
+    <div class="nav-label" style="padding:16px 20px 6px">专辑 / 文件夹</div>
+    <div class="album-scroll" id="albumNav"></div>
+  </aside>
+
+  <!-- ══════ 主区 ══════ -->
+  <section class="main">
+    <header class="topbar">
+      <div class="search" id="searchWrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+        </svg>
+        <input id="q" type="search" placeholder="搜索歌名、歌手、专辑、标签…" autocomplete="off" spellcheck="false">
+        <button class="clr" id="qClear" title="清空">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="seg" id="kindSeg">
+        <button data-kind="all" class="on">全部</button>
+        <button data-kind="audio">音频</button>
+        <button data-kind="video">视频</button>
+      </div>
+
+      <div class="seg" id="viewSeg">
+        <button data-view="albums">专辑</button>
+        <button data-view="list" class="on">列表</button>
+      </div>
+
+      <select class="sel" id="sort">
+        <option value="album">按专辑排序</option>
+        <option value="title">按曲名排序</option>
+        <option value="artist">按歌手排序</option>
+        <option value="size">按体积排序</option>
+        <option value="time">按修改时间排序</option>
+      </select>
+
+      <button class="btn" id="rescan" title="重新扫描已添加的目录">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>
+        </svg>
+        <span id="rescanLabel">重新扫描</span>
+      </button>
+    </header>
+
+    <div class="content" id="content"></div>
+
+    <!-- ══════ 播放条 ══════ -->
+    <footer class="player">
+      <div class="now">
+        <div class="now-cover" id="nowCover">♪</div>
+        <div class="now-txt">
+          <b id="nowTitle">未在播放</b>
+          <span id="nowSub">从列表中选择一个文件开始</span>
+        </div>
+      </div>
+
+      <div class="ctrls">
+        <button class="cbtn" id="shuffle" title="随机播放 (S)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>
+          </svg>
+        </button>
+        <button class="cbtn" id="prev" title="上一个 (P)">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2.5v14H6zM20 5v14L9.5 12z"/></svg>
+        </button>
+        <button class="cbtn play" id="play" title="播放 / 暂停 (空格)">
+          <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>
+        </button>
+        <button class="cbtn" id="next" title="下一个 (N)">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 5H18v14h-2.5zM4 5v14l10.5-7z"/></svg>
+        </button>
+        <button class="cbtn" id="repeat" title="循环模式 (R)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="seek">
+        <span class="time" id="tCur">0:00</span>
+        <div class="rail" id="seekRail">
+          <div class="track"><div class="fill" id="seekFill"></div></div>
+          <div class="knob" id="seekKnob"></div>
+        </div>
+        <span class="time r" id="tDur">0:00</span>
+      </div>
+
+      <div class="right">
+        <select class="sel" id="rate" title="播放速度" style="padding:6px 8px">
+          <option value="0.5">0.5×</option><option value="0.75">0.75×</option>
+          <option value="1" selected>1.0×</option><option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option><option value="2">2.0×</option>
+        </select>
+
+        <div class="vol">
+          <button class="cbtn" id="mute" title="静音 (M)" style="width:28px;height:28px">
+            <svg id="volIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>
+            </svg>
+          </button>
+          <div class="rail" id="volRail" style="height:14px">
+            <div class="track" style="height:3px"><div class="fill" id="volFill" style="width:100%"></div></div>
+            <div class="knob" id="volKnob" style="width:9px;height:9px;left:100%"></div>
+          </div>
+        </div>
+
+        <button class="btn" id="sysOpen" title="调用系统默认播放器">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/>
+          </svg>
+          系统播放
+        </button>
+
+        <button class="btn rel" id="queueBtn" title="播放队列">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M3 6h13M3 12h13M3 18h9"/><path d="M19 12v8"/><circle cx="17" cy="20" r="2"/>
+          </svg>
+          <span class="dot-badge" id="qBadge" style="display:none">0</span>
+        </button>
+      </div>
+    </footer>
+  </section>
+</div>
+
+<!-- ══════ 队列抽屉 ══════ -->
+<aside class="drawer" id="drawer">
+  <div class="drawer-hd">
+    <h2>播放队列</h2>
+    <span class="cnt" id="qCount">0 首</span>
+    <button class="ico" id="qExport" title="导出为 M3U8 播放列表">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>
+      </svg>
+    </button>
+    <button class="ico" id="qClear" title="清空队列">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>
+      </svg>
+    </button>
+    <button class="ico" id="qClose" title="关闭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="qlist" id="qList"></div>
+</aside>
+
+<!-- ══════ 视频模态 ══════ -->
+<div class="modal" id="modal">
+  <div class="modal-in">
+    <div class="modal-hd">
+      <h2 id="mVidTitle">视频</h2>
+      <button class="btn" id="mVidSys">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/>
+        </svg>
+        用系统播放器打开
+      </button>
+      <button class="ico" id="mVidReveal" title="在资源管理器中定位">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        </svg>
+      </button>
+      <button class="ico" id="mVidClose" title="关闭 (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <video id="video" controls playsinline></video>
+    <div class="fallback">
+      <p style="font-size:15px;font-weight:550;margin-bottom:10px">浏览器内置播放器无法解码该格式</p>
+      <p style="color:var(--muted);font-size:13px;line-height:1.8;max-width:520px;margin:0 auto">
+        <span id="fExt">该容器</span> 不在浏览器的解码支持范围内（常见于 MKV / RMVB / AVI / WMV）。
+        点击上方 <b style="color:var(--text)">用系统播放器打开</b>，将交由 PotPlayer 等本机默认播放器处理，字幕与音轨都会正常。
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 删除确认 ══════ -->
+<div class="modal" id="delModal">
+  <div class="modal-in" style="max-width:480px">
+    <div class="modal-hd"><h2>删除文件</h2></div>
+    <div style="font-size:13px;line-height:1.9;color:var(--text-2)">
+      将把以下 <b id="delCount" style="color:var(--text)">1</b> 个文件移入<b style="color:var(--warm)">系统回收站</b>（可随时还原）：
+      <div id="delList" style="margin-top:9px;max-height:200px;overflow:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-s);padding:9px 12px;font-size:12px;line-height:1.9;color:var(--muted)"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn" id="delCancel">取消</button>
+      <button class="btn" id="delGo" style="background:#E5484D;border-color:#E5484D;color:#fff">移入回收站</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 目录选择器（添加扫描目录） ══════ -->
+<div class="modal" id="dirModal">
+  <div class="modal-in" style="max-width:620px">
+    <div class="modal-hd">
+      <h2>添加扫描目录</h2>
+      <button class="ico" id="dirClose" title="关闭 (Esc)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="dir-note">
+      播放器只会扫描<b>你在这里添加的目录</b>（含子目录），不会全盘扫描。未添加任何目录时，默认只扫描播放器所在的这个文件夹。
+    </div>
+
+    <div class="dir-wrap">
+      <div class="dir-crumb" id="dirCrumb">正在读取磁盘…</div>
+      <div class="dir-bar">
+        <input id="dirPath" placeholder="也可直接粘贴路径，例如 D:/Music 或 E:/音乐" spellcheck="false">
+        <button class="btn" id="dirUp">↑ 上级</button>
+        <button class="btn" id="dirGo">前往</button>
+      </div>
+      <div class="dir-list" id="dirList"></div>
+    </div>
+
+    <div class="dir-foot">
+      <input id="dirLabel" placeholder="显示名称（可选）" spellcheck="false">
+      <select class="sel" id="dirGroup">
+        <option value="音乐">音乐</option>
+        <option value="视频">视频</option>
+        <option value="本地" selected>本地</option>
+        <option value="媒体">其它</option>
+      </select>
+      <span class="grow"></span>
+      <button class="btn primary" id="dirPick">添加当前目录</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 音频标签（唯一媒体元素，复用于音频与视频） ══════ -->
+<audio id="audio" preload="metadata"></audio>
+
+<div class="toasts" id="toasts"></div>
+
+<!-- ══════ 启动遮罩 ══════ -->
+<div class="boot" id="boot">
+  <div>
+    <div class="spin"></div>
+    <h2 id="bootTitle">正在连接本地播放器服务…</h2>
+    <p id="bootSub">若长时间停留在此页面，说明服务未启动。<br>请双击目录中的 <code>启动播放器.bat</code> 后刷新。</p>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ══════════════════════════════════════════════════════════════
+   离线音乐与视频播放器 ·  前端
+   ══════════════════════════════════════════════════════════════ */
+
+const $  = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+/* ─────────  状态  ───────── */
+const S = {
+  lib: null,
+  tracks: [],
+  view: localStorage.getItem('pv.view') || 'list',
+  group: '全部',
+  root: null,         // 按扫描目录筛选（值为 rootLabel）
+  albumId: null,
+  genre: null,        // 曲风筛选（'__unknown' = 未识别）
+  kind: 'all',
+  tag: null,
+  q: '',
+  sort: localStorage.getItem('pv.sort') || 'album',
+  queue: [],          // 媒体 id 顺序
+  order: [],          // 播放顺序（queue 的下标），随机模式下被打乱
+  pos: -1,            // order 中的位置
+  cur: null,          // 当前播放的 track 对象
+  shuffle: false,
+  repeat: localStorage.getItem('pv.repeat') || 'off',
+  volume: Number(localStorage.getItem('pv.vol') ?? 1),
+  rate: 1,
+  page: 0,            // 列表分页渲染游标
+  filtered: []
+};
+
+const audio = $('#audio');
+const video = $('#video');
+let activeMedia = audio;      // 当前由哪个媒体元素播放
+let serviceMode = false;
+let sysPlayerName = '系统默认播放器';
+
+/* ─────────  持久化  ───────── */
+const save = () => {
+  try {
+    localStorage.setItem('pv.view', S.view);
+    localStorage.setItem('pv.sort', S.sort);
+    localStorage.setItem('pv.repeat', S.repeat);
+    localStorage.setItem('pv.vol', String(S.volume));
+    localStorage.setItem('pv.queue', JSON.stringify(S.queue.slice(0, 3000)));
+  } catch { /* 存储配额不足时忽略 */ }
+};
+
+/* ─────────  工具  ───────── */
+const fmtTime = (sec) => {
+  if (!isFinite(sec) || sec < 0) return '0:00';
+  sec = Math.floor(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+           : `${m}:${String(s).padStart(2,'0')}`;
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function hash(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+const coverStyle = (seed) => {
+  const h = hash(seed) % 360;
+  return `background:linear-gradient(145deg,hsl(${h} 42% 30%),hsl(${(h + 46) % 360} 48% 15%))`;
+};
+const coverGlyph = (name) => {
+  const m = String(name).replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '');
+  return m ? m[0].toUpperCase() : '♪';
+};
+const kindLabel = (t) => t.kind === 'video' ? '视频' : '音频';
+
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  $('#toasts').appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; }, 2300);
+  setTimeout(() => el.remove(), 2700);
+}
+
+/* ══════════════════  载入媒体库  ══════════════════ */
+
+/** 扫描进度写进启动遮罩 —— 添加了大目录时能看见进度在涨，而不是白屏干等 */
+function renderScanProgress(st, waitedMs) {
+  if (!st) return;
+  const secs = ((st.scanMs || waitedMs || 0) / 1000).toFixed(1);
+  $('#bootTitle').textContent = st.running ? '正在扫描媒体库…' : '正在载入媒体库…';
+  $('#bootSub').innerHTML = st.running
+    ? `已访问 <b style="color:var(--text)">${st.dirs || 0}</b> 个文件夹 · 发现
+       <b style="color:var(--text)">${st.files || 0}</b> 个媒体文件 · 用时 ${secs}s<br>
+       <span style="opacity:.7">扫描在后台进行，扫完会自动显示（目录很大时会久一点）。</span>`
+    : `正在读取索引… ${secs}s`;
+}
+
+/** 取媒体库；若服务正在扫描则返回 202，这里轮询到扫描结束为止 */
+async function fetchLibrary() {
+  let waited = 0;
+  for (;;) {
+    const r = await fetch('/api/library', { cache: 'no-store' });
+    if (r.status === 200) {
+      const j = await r.json();
+      if (j && Array.isArray(j.tracks)) return j;
+    } else if (r.status === 202) {
+      const j = await r.json();
+      renderScanProgress(j.state, waited);
+    } else {
+      throw new Error(`媒体库不可用（HTTP ${r.status}）`);
+    }
+    await sleep(400);
+    waited += 400;
+  }
+}
+
+/** 轮询扫描状态直到结束 */
+async function waitScanDone(onTick) {
+  for (;;) {
+    const st = await (await fetch('/api/scan-status', { cache: 'no-store' })).json();
+    if (onTick) onTick(st);
+    if (!st.running) return st;
+    await sleep(350);
+  }
+}
+
+/** 把一份新索引套用到界面上（启动、重扫、增删目录后共用） */
+function applyLibrary(lib, opts = {}) {
+  S.lib = lib;
+  S.tracks = lib.tracks;
+  const valid = new Set(lib.tracks.map((t) => t.id));
+
+  if (opts.restoreQueue) {
+    // 恢复上次的队列
+    try {
+      const saved = JSON.parse(localStorage.getItem('pv.queue') || '[]');
+      S.queue = Array.isArray(saved) ? saved.filter((id) => valid.has(id)) : [];
+    } catch { S.queue = []; }
+  } else {
+    S.queue = S.queue.filter((id) => valid.has(id));
+  }
+
+  // 扫描范围变了之后，之前选中的目录 / 分类 / 专辑 / 曲风可能已经不存在 —— 回退，避免看到空白页
+  if (S.root && !lib.roots.some((r) => r.label === S.root)) S.root = null;
+  if (S.group !== '全部' && !lib.groups.some((g) => g.name === S.group)) S.group = '全部';
+  if (S.albumId && !lib.albums.some((a) => a.id === S.albumId)) S.albumId = null;
+  if (S.genre && !(lib.genres || []).some((g) => g.id === S.genre)) S.genre = null;
+
+  if (S.cur && !valid.has(S.cur.id)) {
+    S.cur = null;
+    audio.pause(); video.pause(); audio.removeAttribute('src');
+  }
+
+  rebuildOrder();
+  if (S.cur) S.pos = S.order.indexOf(S.queue.indexOf(S.cur.id));
+
+  buildNav();
+  render();
+  renderQueue();
+  updateBadge();
+  updatePlayerUI();
+  markCurrentRow();
+  if (!opts.restoreQueue) save();
+}
+
+async function boot() {
+  try {
+    const r = await fetch('/api/ping', { cache: 'no-store' });
+    if (!r.ok) throw new Error('no service');
+    const info = await r.json();
+    serviceMode = true;
+    if (info.systemPlayer) {
+      sysPlayerName = info.systemPlayer;
+      $('#sysOpen').title = `用 ${sysPlayerName} 打开`;
+    }
+    console.log('[播放器] 服务模式', info);
+  } catch {
+    serviceMode = false;
+    $('#boot').innerHTML = `<div>
+      <h2 style="color:#FFB26B">未检测到本地播放器服务</h2>
+      <p style="margin-top:10px">当前页面是以文件方式直接打开的，因此无法扫描磁盘、也无法调起系统播放器。<br><br>
+      请回到目录 <b style="color:var(--text)">离线网页播放器</b>，双击运行 <code>启动播放器.bat</code>，
+      浏览器会自动打开 <code>http://127.0.0.1:8787</code>。</p>
+    </div>`;
+    return;
+  }
+
+  try {
+    applyLibrary(await fetchLibrary(), { restoreQueue: true });
+
+    $('#boot').classList.add('hide');
+    const st = S.lib.stats;
+    toast(`媒体库就绪 · ${st.total} 个文件（音频 ${st.audio} · 视频 ${st.video}）`, 'ok');
+    if (!st.total) {
+      toast('没有索引到媒体文件 —— 点左侧「＋ 添加目录」选择你的音乐 / 视频文件夹', 'err');
+    }
+  } catch (err) {
+    $('#boot').innerHTML = `<div><h2 style="color:#FFB29B">媒体库载入失败</h2>
+      <p style="margin-top:10px">${esc(err.message)}</p></div>`;
+  }
+}
+
+/* ══════════════════  侧栏  ══════════════════ */
+const GENRE_NAME = {};        // 曲风 id → 名称（boot / 重新扫描时刷新）
+
+/* ── 扫描目录列表 ── */
+function buildRoots() {
+  const rootList = (S.lib && S.lib.roots) || [];
+  const box = $('#rootNav');
+
+  if (!rootList.length) {
+    box.innerHTML = `<div class="empty-hint">未添加任何目录。<br>默认只扫描播放器所在的文件夹。</div>`;
+  } else {
+    box.innerHTML = rootList.map((r) => `
+      <div class="root-pill ${r.exists ? '' : 'missing'} ${r.isDefault ? 'def' : ''} ${S.root === r.label ? 'on' : ''}"
+           data-root="${esc(r.label)}"
+           title="${esc(r.path)}${r.exists ? '' : ' —— 目录不存在，已跳过'}${r.isDefault ? '（默认范围）' : ''}">
+        <span class="rp-ico"></span>
+        <span class="rp-txt">
+          <span class="rp-nm">${esc(r.label)}</span>
+          <span class="rp-sub">${r.exists ? esc(r.path) : '⚠ 目录不存在（已跳过）'}</span>
+        </span>
+        <span class="rp-cnt">${r.files}</span>
+        ${r.isDefault ? '' : `<button class="rp-x" data-x="${esc(r.path)}" title="从扫描范围中移除">✕</button>`}
+      </div>`).join('');
+  }
+
+  // 点目录 = 只看这个目录的文件；再点一次取消
+  $$('#rootNav .root-pill').forEach((p) => p.onclick = () => {
+    const name = p.dataset.root;
+    S.root = S.root === name ? null : name;
+    S.albumId = null;
+    buildRoots(); render();
+  });
+  $$('#rootNav .rp-x').forEach((b) => b.onclick = (e) => {
+    e.stopPropagation();
+    askRemoveRoot(b.dataset.x);
+  });
+
+  // 当前是否处于「未配置目录 → 默认扫本目录」状态
+  const isDefault = !!(S.lib && S.lib.usingDefaultRoots);
+  const one = rootList.length === 1;
+  $('#rootReset').textContent = isDefault ? '↺ 当前为默认范围（仅本目录）' : '↺ 恢复默认（仅本目录）';
+  $('#rootReset').disabled = isDefault && one;
+  $('#rootReset').style.opacity = (isDefault && one) ? '.5' : '';
+}
+
+function buildNav() {
+  const groups = S.lib.groups;
+  const order = ['音乐', '视频', '家族'];
+  const names = [...order.filter((n) => groups.some((g) => g.name === n)),
+                 ...groups.map((g) => g.name).filter((n) => !order.includes(n))];
+
+  const total = S.lib.stats.total;
+  const items = [{ name: '全部', count: total, audio: S.lib.stats.audio, video: S.lib.stats.video }];
+  for (const n of names) {
+    const g = groups.find((x) => x.name === n);
+    items.push({ name: n, count: g.count, audio: g.audio, video: g.video });
+  }
+
+  $('#nav').innerHTML = `<div class="nav-label">媒体分类</div>` + items.map((it) => `
+    <button class="nav-item ${S.group === it.name ? 'on' : ''}" data-group="${esc(it.name)}">
+      <span class="nav-dot"></span>
+      <span>${esc(it.name)}</span>
+      <span class="cnt">${it.count}</span>
+    </button>`).join('');
+
+  $$('#nav .nav-item').forEach((b) => b.onclick = () => {
+    S.group = b.dataset.group; S.albumId = null; S.genre = null;
+    buildNav(); render();
+  });
+
+  const s = S.lib.stats;
+  $('#sideStat').textContent = `${s.total} 个文件 · ${s.albums} 个专辑`;
+
+  buildRoots();
+
+  // 曲风列表（三层分类的第二层：大类 → 曲风 → 专辑）
+  const genres = S.lib.genres || [];
+  for (const g of genres) GENRE_NAME[g.id] = g.name;
+  $('#genreNav').innerHTML = genres.map((g) => `
+    <button class="album-pill ${S.genre === g.id ? 'on' : ''}" data-genre="${esc(g.id)}"
+            title="${g.id === '__unknown' ? '点击联网补全这些文件的曲风' : esc(g.name)}">
+      <span class="sw" style="${g.id === '__unknown' ? 'background:var(--panel-3);border:1px dashed var(--line-strong)' : coverStyle('曲风:' + g.id)}"></span>
+      <span class="nm">${esc(g.name)}</span>
+      <span class="cnt">${g.count}</span>
+    </button>`).join('') || `<div style="padding:10px 12px;color:var(--muted);font-size:12px">扫描后此处显示曲风</div>`;
+
+  $$('#genreNav .album-pill').forEach((b) => b.onclick = () => {
+    const id = b.dataset.genre;
+    S.genre = S.genre === id ? null : id;
+    if (S.genre) { S.group = '音乐'; S.albumId = null; }   // 曲风只作用于音频
+    buildNav(); render();
+  });
+
+  // 专辑列表：随大类 + 曲风联动
+  const albums = S.lib.albums.filter((a) =>
+    (S.group === '全部' || a.group === S.group) &&
+    (!S.genre || (S.genre === '__unknown' ? !a.genre : a.genre === S.genre)));
+  $('#albumNav').innerHTML = albums.map((a) => `
+    <button class="album-pill ${S.albumId === a.id ? 'on' : ''}" data-album="${a.id}" title="${esc(a.rootLabel + ' / ' + a.fullPath)}">
+      <span class="sw" style="${coverStyle(a.name + a.rootLabel)}"></span>
+      <span class="nm">${esc(a.name)}</span>
+      <span class="cnt">${a.count}</span>
+    </button>`).join('') || `<div style="padding:14px 12px;color:var(--muted);font-size:12px">该分类下暂无专辑</div>`;
+
+  $$('#albumNav .album-pill').forEach((b) => b.onclick = () => {
+    S.albumId = S.albumId === b.dataset.album ? null : b.dataset.album;
+    buildNav(); render();
+  });
+}
+
+let tagbarEl = null;
+function renderTagbar() {
+  tagbarEl = null;
+  if (!S.lib) return;
+  const chips = S.lib.tags.filter((t) => t.count > 0).slice(0, 16);
+  if (!chips.length && !S.root) return;
+  const bar = document.createElement('div');
+  bar.className = 'tagbar';
+  bar.innerHTML =
+    (S.root ? `<button class="chip on" data-rootclear="1" title="取消目录筛选">📁 ${esc(S.root)} ✕</button>` : '') +
+    chips.map((t) => `
+    <button class="chip ${S.tag === t.name ? 'on' : ''}" data-tag="${esc(t.name)}">
+      ${esc(t.name)} <span style="opacity:.55">${t.count}</span>
+    </button>`).join('') +
+    (S.tag ? `<button class="chip" data-tag="">✕ 清除标签筛选</button>` : '');
+  $$('.chip', bar).forEach((c) => c.onclick = () => {
+    if (c.dataset.rootclear) { S.root = null; buildRoots(); render(); return; }
+    S.tag = c.dataset.tag || null;
+    render();
+  });
+  tagbarEl = bar;
+}
+
+/* ══════════════════  筛选  ══════════════════ */
+function computeFiltered() {
+  const q = S.q.trim().toLowerCase();
+  const terms = q ? q.split(/\s+/) : [];
+
+  let list = S.tracks.filter((t) => {
+    if (S.root && t.rootLabel !== S.root) return false;
+    if (S.group !== '全部' && t.group !== S.group) return false;
+    if (S.albumId && t.albumId !== S.albumId) return false;
+    if (S.genre && (S.genre === '__unknown' ? !!t.genre : t.genre !== S.genre)) return false;
+    if (S.kind !== 'all' && t.kind !== S.kind) return false;
+    if (S.tag && !t.tags.includes(S.tag)) return false;
+    if (terms.length) {
+      const hay = `${t.title} ${t.artist} ${t.album} ${t.file} ${t.tags.join(' ')} ${t.relPath} ${t.genre ? (GENRE_NAME[t.genre] || '') : ''}`.toLowerCase();
+      if (!terms.every((x) => hay.includes(x))) return false;
+    }
+    return true;
+  });
+
+  const cmp = {
+    album:  (a, b) => a.album.localeCompare(b.album, 'zh') || a.file.localeCompare(b.file, 'zh', { numeric: true }),
+    title:  (a, b) => a.title.localeCompare(b.title, 'zh', { numeric: true }),
+    artist: (a, b) => (a.artist || '￿').localeCompare(b.artist || '￿', 'zh'),
+    size:   (a, b) => b.size - a.size,
+    time:   (a, b) => b.mtime - a.mtime
+  }[S.sort];
+  if (cmp) list.sort(cmp);
+
+  S.filtered = list;
+  S.page = 0;
+  return list;
+}
+
+/* ══════════════════  渲染  ══════════════════ */
+function render() {
+  if (!S.lib) return;
+  const list = computeFiltered();
+  const content = $('#content');
+  content.innerHTML = '';
+  content.scrollTop = 0;
+  renderCtx = null;              // 本次渲染不产生列表（专辑网格 / 空态）时不再响应滚动追加
+
+  renderTagbar();
+  if (tagbarEl) content.appendChild(tagbarEl);
+
+  if (!list.length) {
+    content.insertAdjacentHTML('beforeend', `
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>
+        </svg>
+        <p>没有匹配的媒体文件</p>
+      </div>`);
+    return;
+  }
+
+  if (S.view === 'albums') renderAlbums(content, list);
+  else renderList(content, list);
+}
+
+/* ── 专辑视图 ── */
+function renderAlbums(content, list) {
+  const inAlbum = S.albumId ? S.lib.albums.find((a) => a.id === S.albumId) : null;
+
+  if (inAlbum) {
+    content.insertAdjacentHTML('beforeend', heroHTML(
+      inAlbum.name,
+      `${inAlbum.count} 首 ${inAlbum.kind === 'video' ? '视频' : '音频'} · ${inAlbum.sizeText} · ${inAlbum.rootLabel}${inAlbum.fullPath !== '根目录' ? ' / ' + inAlbum.fullPath : ''}`,
+      inAlbum.tags,
+      inAlbum.kind,
+      `album:${inAlbum.id}`
+    ));
+  } else {
+    const albums = new Map();
+    for (const t of list) if (!albums.has(t.albumId)) albums.set(t.albumId, S.lib.albums.find((a) => a.id === t.albumId));
+    const arr = [...albums.values()].filter(Boolean);
+
+    if (!arr.length) return;
+    content.insertAdjacentHTML('beforeend', `
+      <div class="grid">${arr.map((a) => `
+        <button class="card" data-album="${a.id}">
+          <div class="card-cover" style="${coverStyle(a.name + a.rootLabel)}">
+            <span>${esc(coverGlyph(a.name))}</span>
+            ${a.kind === 'video' ? '<span class="badge">视频</span>' : ''}
+            <div class="play"><span>
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>
+            </span></div>
+          </div>
+          <h3>${esc(a.name)}</h3>
+          <div class="cm">${a.count} 首 · ${a.sizeText}</div>
+          ${a.genre && GENRE_NAME[a.genre] ? `<div class="chips"><span class="chip" style="border-color:rgba(124,92,255,.4);color:#B7A6FF">${esc(GENRE_NAME[a.genre])}</span>${a.tags.slice(0, 2).map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>`
+            : (a.tags.length ? `<div class="chips">${a.tags.slice(0, 3).map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : '')}
+        </button>`).join('')}
+      </div>`);
+
+    // 单击进入专辑，双击直接播放整张
+    $$('.card', content).forEach((el) => {
+      el.onclick = () => { S.albumId = el.dataset.album; buildNav(); render(); };
+      el.ondblclick = (e) => {
+        e.preventDefault();
+        S.albumId = el.dataset.album;
+        buildNav(); render();
+        setTimeout(() => playAlbum(el.dataset.album), 60);
+      };
+    });
+    return;
+  }
+
+  // 专辑内部：曲目列表
+  const rows = list.filter((t) => t.albumId === inAlbum.id);
+  renderList(content, rows, true);
+}
+
+function heroHTML(title, sub, tags, kind, token) {
+  return `
+  <div class="hero">
+    <div class="hero-cover" style="${coverStyle(title)}">${esc(coverGlyph(title))}</div>
+    <div class="hero-meta">
+      <div class="kick">${kind === 'video' ? '视频专辑' : '音频专辑'}</div>
+      <h1>${esc(title)}</h1>
+      <div class="sub">${esc(sub)}</div>
+      <div class="hero-actions">
+        <button class="btn primary" data-act="play-all" data-token="${esc(token)}">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>
+          播放全部
+        </button>
+        <button class="btn" data-act="enqueue-all" data-token="${esc(token)}">加入队列</button>
+        ${tags.length ? `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">${tags.slice(0, 5).map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ── 列表视图 ── */
+const RENDER_STEP = 150;      // 每批渲染行数
+let renderCtx = null;         // 当前列表渲染上下文，供滚动追加使用
+
+/** 追加下一批曲目行 */
+function appendChunk() {
+  const ctx = renderCtx;
+  if (!ctx) return;
+  const { list, tbody, insideAlbum, step } = ctx;
+  const start = S.page * step;
+  const slice = list.slice(start, start + step);
+  if (!slice.length) return;
+
+  const frag = document.createDocumentFragment();
+  slice.forEach((t, i) => {
+    const n = start + i;
+    const isCur = !!S.cur && S.cur.id === t.id;
+    const tr = document.createElement('tr');
+    tr.dataset.id = t.id;
+    tr.dataset.n = n + 1;
+    if (isCur) tr.className = 'cur';
+
+    tr.innerHTML = `
+      <td class="idx">${isCur ? '<span class="eq"><i></i><i></i><i></i></span>' : (n + 1)}</td>
+      <td class="ttl" title="${esc(t.file)}">
+        ${esc(t.title)}
+        ${t.kind === 'video' ? '<span class="tg">视频</span>' : ''}
+        ${t.genre && GENRE_NAME[t.genre] ? `<span class="tg gtag" title="曲风">${esc(GENRE_NAME[t.genre])}</span>` : ''}
+        ${!t.native ? '<span class="tg" style="color:#FFB26B">需系统播放器</span>' : ''}
+        ${t.tags.slice(0, 2).map((g) => `<span class="tg">${esc(g)}</span>`).join('')}
+      </td>
+      <td class="art" title="${esc(t.artist || '未知')}">${esc(t.artist || '—')}</td>
+      ${insideAlbum ? '' : `<td class="talum" title="${esc(t.album)}">${esc(t.album)}</td>`}
+      <td class="size">${t.sizeText}</td>
+      <td class="acts">
+        <button class="ico" data-a="play" title="播放">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>
+        </button>
+        ${t.kind === 'video' && t.native ? `
+        <button class="ico" data-a="builtin" title="用浏览器内置播放器播放">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>
+          </svg>
+        </button>` : ''}
+        <button class="ico" data-a="queue" title="加入队列">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button class="ico" data-a="sys" title="用系统默认播放器打开">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/>
+          </svg>
+        </button>
+        <button class="ico" data-a="reveal" title="在资源管理器中定位">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          </svg>
+        </button>
+        <button class="ico" data-a="del" title="删除（移入系统回收站）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+          </svg>
+        </button>
+      </td>`;
+    frag.appendChild(tr);
+  });
+
+  tbody.appendChild(frag);
+  S.page++;
+}
+
+/** 滚动到底部附近时继续追加（全局只注册一次，避免监听器随重渲染叠加） */
+function bindInfiniteScroll() {
+  $('#content').addEventListener('scroll', () => {
+    const ctx = renderCtx;
+    if (!ctx) return;
+    if (ctx.list.length <= S.page * ctx.step) return;
+    const c = $('#content');
+    if (c.scrollTop + c.clientHeight > c.scrollHeight - 600) appendChunk();
+  });
+}
+
+function renderList(content, list, insideAlbum = false) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+  <table class="tlist">
+    <thead><tr>
+      <th class="num" style="width:44px">#</th>
+      <th>曲名 / 文件名</th>
+      <th style="width:20%">歌手</th>
+      ${insideAlbum ? '' : '<th style="width:18%">专辑</th>'}
+      <th style="width:9%" class="num">体积</th>
+      <th class="acts"></th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>`;
+  content.appendChild(wrap);
+
+  // 分批渲染：两千多行一次性塞进 DOM 会明显卡顿，改为滚动到阈值时追加下一批。
+  const tbody = $('#tbody', wrap);
+  renderCtx = { list, tbody, insideAlbum, step: RENDER_STEP };
+  appendChunk();
+
+  // 行内交互
+  wrap.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr');
+    if (!tr) return;
+    const t = S.tracks.find((x) => x.id === tr.dataset.id);
+    if (!t) return;
+    const btn = e.target.closest('[data-a]');
+    if (!btn) { playTrack(t, list); return; }
+    e.stopPropagation();
+    switch (btn.dataset.a) {
+      case 'play':    playTrack(t, list); break;
+      case 'builtin': playVideoModal(t); break;
+      case 'queue':   enqueue([t], true); break;
+      case 'sys':     openWithSystem(t); break;
+      case 'reveal':  reveal(t); break;
+      case 'del':     askDelete([t]); break;
+    }
+  });
+  wrap.addEventListener('dblclick', (e) => {
+    const tr = e.target.closest('tr');
+    if (!tr) return;
+    const t = S.tracks.find((x) => x.id === tr.dataset.id);
+    if (t) playTrack(t, list);
+  });
+
+  // 专辑内页的操作按钮
+  $$('[data-act]', content).forEach((b) => {
+    b.onclick = () => {
+      const rows = list;
+      if (b.dataset.act === 'play-all') { if (rows.length) playTrack(rows[0], rows); }
+      else { enqueue(rows, false); }
+    };
+  });
+}
+
+/* ══════════════════  队列  ══════════════════ */
+function rebuildOrder() {
+  S.order = S.queue.map((_, i) => i);
+  if (S.shuffle) {
+    for (let i = S.order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [S.order[i], S.order[j]] = [S.order[j], S.order[i]];
+    }
+  }
+}
+
+function enqueue(tracks, playNow) {
+  for (const t of tracks) if (!S.queue.includes(t.id)) S.queue.push(t.id);
+  rebuildOrder();
+  save(); renderQueue(); updateBadge();
+  toast(`已加入队列 · 共 ${S.queue.length} 项`);
+  if (playNow) playAt(S.order.indexOf(S.queue.indexOf(tracks[0].id)));
+}
+
+/** 从当前筛选列表开始播放 */
+function playTrack(track, list) {
+  const ids = (list || S.filtered).map((t) => t.id);
+  S.queue = ids.slice();
+  rebuildOrder();
+  save(); renderQueue(); updateBadge();
+  playAt(S.order[S.queue.indexOf(track.id)] ?? 0);
+}
+
+function playAlbum(albumId) {
+  const rows = S.tracks.filter((t) => t.albumId === albumId);
+  if (!rows.length) return;
+  const order = S.sort === 'album' ? rows : rows.sort((a, b) => a.file.localeCompare(b.file, 'zh', { numeric: true }));
+  playTrack(order[0], order);
+}
+
+/** 播放 order 中第 idx 项 */
+function playAt(idx) {
+  if (!S.order.length) return;
+  S.pos = ((idx % S.order.length) + S.order.length) % S.order.length;
+  const id = S.queue[S.order[S.pos]];
+  const t = S.tracks.find((x) => x.id === id);
+  if (t) start(t);
+}
+
+function nextTrack(auto = false) {
+  if (!S.order.length) return;
+  if (S.repeat === 'one' && auto) { activeMedia.currentTime = 0; activeMedia.play().catch(() => {}); return; }
+  const last = S.pos >= S.order.length - 1;
+  if (last && S.repeat === 'off' && auto) { stopAtEnd(); return; }
+  playAt(last ? 0 : S.pos + 1);
+}
+function prevTrack() {
+  if (activeMedia.currentTime > 3) { activeMedia.currentTime = 0; return; }
+  playAt(S.pos <= 0 ? S.order.length - 1 : S.pos - 1);
+}
+function stopAtEnd() {
+  audio.pause(); video.pause();
+  setPlayIcon(false);
+}
+
+/* ══════════════════  播放核心  ══════════════════ */
+function start(t) {
+  S.cur = t;
+
+  // 切换媒体元素
+  audio.pause(); video.pause();
+  const useVideo = t.kind === 'video';
+  activeMedia = useVideo ? video : audio;
+  const other = useVideo ? audio : video;
+  other.removeAttribute('src');
+
+  // 视频：点击播放 = 直接交给本地播放器（PotPlayer 等）。
+  // 字幕、多音轨、MKV/RMVB 等格式的兼容性都远好于浏览器；想用内置播放器请点行内的「显示器」按钮。
+  if (useVideo) {
+    video.removeAttribute('src');
+    $('#modal').classList.remove('open');
+    updatePlayerUI(); markCurrentRow(); save();
+    openWithSystem(t);
+    return;
+  }
+
+  const url = `/api/stream?id=${encodeURIComponent(t.id)}`;
+  audio.src = url;
+  audio.playbackRate = S.rate;
+  audio.volume = S.volume;
+  audio.play().catch((err) => {
+    toast('浏览器无法解码该格式，请使用「系统播放」', 'err');
+    console.warn(err);
+  });
+  if (!t.native) toast(`.${t.ext.toUpperCase()} 浏览器可能无法解码，如无声请点「系统播放」`);
+
+  updatePlayerUI();
+  markCurrentRow();
+  save();
+}
+
+/** 浏览器内置播放器播放视频（行内「显示器」按钮 / 主动选择时使用） */
+function playVideoModal(t) {
+  S.cur = t;
+  audio.pause();
+  activeMedia = video;
+  const url = `/api/stream?id=${encodeURIComponent(t.id)}`;
+  if (t.native) {
+    $('#modal').classList.remove('unsupported');
+    video.src = url;
+    video.playbackRate = S.rate;
+    video.volume = S.volume;
+    video.play().catch(() => {});
+  } else {
+    // 浏览器无法解码：直接引导到系统播放器
+    $('#modal').classList.add('unsupported');
+    $('#fExt').textContent = '.' + t.ext.toUpperCase();
+    video.removeAttribute('src');
+  }
+  $('#mVidTitle').textContent = `${t.title}${t.artist ? ' — ' + t.artist : ''}`;
+  $('#mVidSys').onclick = () => openWithSystem(t);
+  $('#mVidReveal').onclick = () => reveal(t);
+  $('#modal').classList.add('open');
+  updatePlayerUI();
+  markCurrentRow();
+  save();
+}
+
+function setPlayIcon(playing) {
+  $('#playIcon').innerHTML = playing
+    ? '<path d="M7 4.5h4v15H7zM13 4.5h4v15h-4z"/>'
+    : '<path d="M7 4.5v15l13-7.5z"/>';
+  $('#play').title = playing ? '暂停 (空格)' : '播放 (空格)';
+}
+
+function updatePlayerUI() {
+  const t = S.cur;
+  if (!t) { setPlayIcon(false); return; }
+  $('#nowTitle').textContent = t.title;
+  $('#nowSub').textContent = [t.artist || '未知歌手', kindLabel(t), `.${t.ext.toUpperCase()}`, t.album]
+    .filter(Boolean).join(' · ');
+  const c = $('#nowCover');
+  c.textContent = coverGlyph(t.title);
+  c.setAttribute('style', coverStyle(t.album + t.title));
+  $('#sysOpen').disabled = false;
+  $('#qCount').textContent = `${S.queue.length} 首`;
+}
+
+function markCurrentRow() {
+  $$('.tlist tbody tr').forEach((tr) => {
+    const on = !!S.cur && tr.dataset.id === S.cur.id;
+    tr.classList.toggle('cur', on);
+    const idx = tr.querySelector('.idx');
+    if (!idx) return;
+    if (on) idx.innerHTML = '<span class="eq"><i></i><i></i><i></i></span>';
+    else if (tr.dataset.n) idx.textContent = tr.dataset.n;   // 还原序号，避免旧行残留波形
+  });
+}
+
+function updateBadge() {
+  const b = $('#qBadge');
+  if (S.queue.length) { b.style.display = 'grid'; b.textContent = S.queue.length > 999 ? '999+' : S.queue.length; }
+  else b.style.display = 'none';
+  $('#qCount').textContent = `${S.queue.length} 首`;
+}
+
+/* ── 进度与时长 ── */
+function bindMedia(el, isVideo) {
+  el.addEventListener('loadedmetadata', () => {
+    if (isVideo !== (activeMedia === video)) return;
+    $('#tDur').textContent = fmtTime(el.duration);
+  });
+  el.addEventListener('timeupdate', () => {
+    if (isVideo !== (activeMedia === video)) return;
+    const d = el.duration || 0;
+    const pct = d ? (el.currentTime / d) * 100 : 0;
+    $('#seekFill').style.width = pct + '%';
+    $('#seekKnob').style.left = pct + '%';
+    $('#tCur').textContent = fmtTime(el.currentTime);
+    $('#tDur').textContent = fmtTime(d);
+  });
+  el.addEventListener('play',  () => { if (isVideo === (activeMedia === video)) setPlayIcon(true); });
+  el.addEventListener('pause', () => { if (isVideo === (activeMedia === video)) setPlayIcon(false); });
+  el.addEventListener('ended', () => nextTrack(true));
+  el.addEventListener('error', () => {
+    if (isVideo !== (activeMedia === video)) return;
+    if (S.cur && !S.cur.native) return;      // 已提示过
+    toast('播放失败：文件可能已被移动或格式不受支持', 'err');
+  });
+}
+bindMedia(audio, false);
+bindMedia(video, true);
+
+/* ── 拖动进度 ── */
+function railDrag(railEl, onRatio) {
+  const calc = (e) => {
+    const r = railEl.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    return Math.min(1, Math.max(0, x / r.width));
+  };
+  const down = (e) => {
+    e.preventDefault();
+    onRatio(calc(e));
+    const move = (ev) => onRatio(calc(ev));
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.removeEventListener('touchmove', move);
+      document.removeEventListener('touchend', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+    document.addEventListener('touchmove', move, { passive: false });
+    document.addEventListener('touchend', up);
+  };
+  railEl.addEventListener('mousedown', down);
+  railEl.addEventListener('touchstart', down, { passive: false });
+}
+
+railDrag($('#seekRail'), (r) => {
+  const el = activeMedia;
+  if (el.duration && isFinite(el.duration)) {
+    el.currentTime = r * el.duration;
+    $('#seekFill').style.width = (r * 100) + '%';
+    $('#seekKnob').style.left = (r * 100) + '%';
+    $('#tCur').textContent = fmtTime(el.currentTime);
+  }
+});
+
+function applyVolume() {
+  audio.volume = S.volume; video.volume = S.volume;
+  const pct = Math.round(S.volume * 100);
+  $('#volFill').style.width = pct + '%';
+  $('#volKnob').style.left = pct + '%';
+  $('#volIcon').innerHTML = S.volume === 0
+    ? '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/>'
+    : S.volume < .5
+      ? '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>'
+      : '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>';
+  save();
+}
+railDrag($('#volRail'), (r) => { S.volume = r; applyVolume(); });
+
+/* ══════════════════  队列渲染  ══════════════════ */
+function renderQueue() {
+  const box = $('#qList');
+  const items = S.queue.map((id) => S.tracks.find((t) => t.id === id)).filter(Boolean);
+  if (!items.length) {
+    box.innerHTML = `<div style="padding:44px 20px;text-align:center;color:var(--muted);font-size:12.5px;line-height:1.9">
+      队列为空<br><span style="opacity:.7">点击列表任意一项即可开始播放<br>「系统播放」交给外部播放器的文件也会计入这里</span></div>`;
+    return;
+  }
+  box.innerHTML = items.map((t, i) => `
+    <div class="qrow ${S.cur && S.cur.id === t.id ? 'cur' : ''}" data-i="${i}" draggable="true">
+      <span class="qi">${i + 1}</span>
+      <span class="qt"><b>${esc(t.title)}</b><span>${esc(t.artist || '未知歌手')} · ${esc(t.album)}</span></span>
+      <button class="qx" data-rm="${i}" title="从队列移除">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>`).join('');
+
+  $$('.qrow', box).forEach((row) => {
+    row.onclick = (e) => {
+      if (e.target.closest('[data-rm]')) {
+        const i = Number(e.target.closest('[data-rm]').dataset.rm);
+        const removed = S.queue.splice(i, 1);
+        if (S.cur && removed[0] === S.cur.id) S.cur = null;
+        rebuildOrder(); save(); renderQueue(); updateBadge();
+        return;
+      }
+      const i = Number(row.dataset.i);
+      playAt(S.order.indexOf(i));
+    };
+  });
+
+  // 拖拽排序
+  let dragFrom = null;
+  $$('.qrow', box).forEach((row) => {
+    row.ondragstart = () => { dragFrom = Number(row.dataset.i); row.classList.add('drag'); };
+    row.ondragend = () => row.classList.remove('drag');
+    row.ondragover = (e) => { e.preventDefault(); row.classList.add('over'); };
+    row.ondragleave = () => row.classList.remove('over');
+    row.ondrop = (e) => {
+      e.preventDefault(); row.classList.remove('over');
+      const to = Number(row.dataset.i);
+      if (dragFrom === null || dragFrom === to) return;
+      const [m] = S.queue.splice(dragFrom, 1);
+      S.queue.splice(to, 0, m);
+      rebuildOrder(); save(); renderQueue();
+    };
+  });
+}
+
+/* ══════════════════  系统集成  ══════════════════ */
+async function openWithSystem(track) {
+  const t = track || S.cur;
+  if (!t) return toast('请先选择一个文件', 'err');
+  if (!serviceMode) return toast('需要本地服务才能调起系统播放器', 'err');
+  try {
+    const r = await fetch('/api/open', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: t.id })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      syncSystemPlayed(t);
+      toast(`已交给 ${j.via || sysPlayerName} 播放 · ${t.title}`, 'ok');
+    }
+    else toast(j.error || '调用失败', 'err');
+  } catch (e) { toast('调用失败：' + e.message, 'err'); }
+}
+
+/**
+ * 「系统播放」不经过网页音频，但这次播放同样要反映在播放列表里：
+ * 计入队列、标记为当前曲目，并停掉网页内正在播的声音，避免两路同时出声。
+ */
+function syncSystemPlayed(t) {
+  if (!S.queue.includes(t.id)) { S.queue.push(t.id); rebuildOrder(); }
+  const qi = S.queue.indexOf(t.id);
+  const oi = S.order.indexOf(qi);
+  if (oi >= 0) S.pos = oi;              // 让「下一首 / 上一首」从这首接续
+  S.cur = t;
+  audio.pause(); video.pause();
+  audio.removeAttribute('src'); video.removeAttribute('src');
+  save(); renderQueue(); updateBadge(); updatePlayerUI(); markCurrentRow();
+}
+
+async function reveal(track) {
+  const t = track || S.cur;
+  if (!t) return;
+  try {
+    const r = await fetch('/api/reveal', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: t.id })
+    });
+    const j = await r.json();
+    if (j.ok) toast(j.focused ? '已在资源管理器中定位并选中' : '资源管理器已打开（若未在前台，请看任务栏）');
+    else toast(j.error || '定位失败', 'err');
+  } catch (e) { toast('定位失败：' + e.message, 'err'); }
+}
+
+/* ══════════════════  删除（移入系统回收站）  ══════════════════ */
+let delPending = [];
+
+function askDelete(tracks) {
+  if (!serviceMode) return toast('需要本地服务才能删除文件', 'err');
+  delPending = tracks.slice();
+  $('#delCount').textContent = tracks.length;
+  $('#delList').innerHTML = tracks.map((t) =>
+    `<div title="${esc(t.rootLabel + ' / ' + t.relPath)}">${esc(t.rootLabel)} / ${esc(t.relPath)}</div>`).join('');
+  $('#delModal').classList.add('open');
+}
+
+$('#delCancel').onclick = () => $('#delModal').classList.remove('open');
+$('#delModal').addEventListener('click', (e) => {
+  if (e.target.id === 'delModal') $('#delModal').classList.remove('open');
+});
+$('#delGo').onclick = async () => {
+  const ids = delPending.map((t) => t.id);
+  const btn = $('#delGo');
+  btn.disabled = true;
+  btn.textContent = '正在删除…';
+  try {
+    const r = await fetch('/api/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
+    });
+    const j = await r.json();
+    if (j.ok) {
+      $('#delModal').classList.remove('open');
+      toast(j.failed ? `已移入回收站 ${j.deleted} 个，${j.failed} 个失败（可能正被占用）`
+                     : `已移入系统回收站 · ${j.deleted} 个文件`, j.failed ? '' : 'ok');
+      await reloadLibrary();
+    } else toast(j.error || '删除失败', 'err');
+  } catch (e) { toast('删除失败：' + e.message, 'err'); }
+  btn.disabled = false;
+  btn.textContent = '移入回收站';
+};
+
+/* ── 重新载入媒体库（删除 / 曲风补全 / 扫描完成后共用） ── */
+async function reloadLibrary() {
+  const lib = await fetchLibrary();     // 若恰好正在扫描，会等到扫完
+  applyLibrary(lib);
+  return lib;
+}
+
+/* ══════════════════  扫描目录管理  ══════════════════ */
+
+/** 触发一次扫描，并把进度写进指定元素；按钮文案由调用方负责恢复 */
+async function scanWithProgress(el, busyText) {
+  const r = await fetch('/api/rescan');
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || '扫描无法开始');
+  return await waitScanDone((st) => {
+    if (el) el.textContent = st.files ? `${busyText} ${st.files}` : busyText;
+  });
+}
+
+$('#rescan').onclick = async () => {
+  const btn = $('#rescan');
+  const label = $('#rescanLabel');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.style.opacity = '.65';
+  const orig = '重新扫描';
+  try {
+    const st = await scanWithProgress(label, '扫描中 ·');
+    if (st.error) { toast('扫描出错：' + st.error, 'err'); return; }
+    const lib = await reloadLibrary();
+    toast(`扫描完成 · ${lib.stats.total} 个文件（${(st.scanMs / 1000).toFixed(1)}s）`, 'ok');
+  } catch (e) { toast('扫描失败：' + e.message, 'err'); }
+  label.textContent = orig;
+  btn.disabled = false;
+  btn.style.opacity = '';
+};
+
+/** 从扫描范围移除一个目录 */
+async function askRemoveRoot(rootPath) {
+  if (!confirm(`把这个目录移出扫描范围？\n\n${rootPath}\n\n只影响播放器的索引，磁盘上的文件不会被删除。`)) return;
+  try {
+    const r = await fetch('/api/roots/remove', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: rootPath })
+    });
+    const j = await r.json();
+    if (!j.ok) { toast(j.error || '移除失败', 'err'); return; }
+    await waitScanDone();
+    const lib = await reloadLibrary();
+    toast(j.emptied
+      ? `已移除 · 现在没有配置任何目录，恢复为只扫描播放器所在目录（${lib.stats.total} 个文件）`
+      : `已移出扫描范围 · 现有 ${lib.stats.total} 个文件`, 'ok');
+  } catch (e) { toast('移除失败：' + e.message, 'err'); }
+}
+
+/** 清空全部扫描目录，回到「仅扫描播放器所在目录」 */
+$('#rootReset').onclick = async () => {
+  if (!confirm('清空全部扫描目录，恢复为「只扫描播放器所在目录及其子目录」？\n\n磁盘上的文件不会被动到。')) return;
+  try {
+    const r = await fetch('/api/roots/reset', { method: 'POST' });
+    const j = await r.json();
+    if (!j.ok) { toast(j.error || '操作失败', 'err'); return; }
+    await waitScanDone();
+    const lib = await reloadLibrary();
+    toast(`已恢复默认扫描范围 · ${lib.stats.total} 个文件`, 'ok');
+  } catch (e) { toast('操作失败：' + e.message, 'err'); }
+};
+
+/* ── 目录选择器 ── */
+const DIR = { path: '', parent: null, depth: 0 };
+
+function dirCrumbHtml(p, extra) {
+  if (!p) return `磁盘列表${extra ? ` · ${esc(extra)}` : ''}`;
+  const segs = p.replace(/\/$/, '').split('/');
+  return segs.map((s, i) => `<b>${esc(s)}</b>`).join(' <span style="opacity:.4">›</span> ') +
+         (extra ? ` <span style="opacity:.6">· ${esc(extra)}</span>` : '');
+}
+
+function renderDirList(j) {
+  const box = $('#dirList');
+  const rows = [];
+
+  // 空路径 = 盘符视图
+  if (!j.path) {
+    if (!j.drives || !j.drives.length) {
+      box.innerHTML = `<div class="dir-empty">没有发现可用磁盘</div>`;
+      return;
+    }
+    rows.push(...j.drives.map((d) => `
+      <button class="dir-row" data-go="${esc(d.path)}">
+        <svg class="di" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        <span class="dn">${esc(d.name)} 磁盘</span>
+        ${d.freeText ? `<span class="dtag">可用 ${esc(d.freeText)} / ${esc(d.totalText)}</span>` : ''}
+        <span class="dadd" data-add="${esc(d.path)}">＋ 添加</span>
+      </button>`).join(''));
+  } else {
+    if (j.parent !== null) {
+      rows.push(`
+        <button class="dir-row" data-go="${esc(j.parent)}">
+          <svg class="di" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+          <span class="dn">… 返回上级</span>
+        </button>`);
+    }
+    if (!j.dirs.length) {
+      rows.push(`<div class="dir-empty">这个文件夹里没有子文件夹</div>`);
+    } else {
+      rows.push(...j.dirs.map((d) => `
+        <button class="dir-row ${d.isSystem ? 'warn' : ''}" data-go="${esc(d.path)}" title="${esc(d.path)}">
+          <svg class="di" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span class="dn">${esc(d.name)}</span>
+          ${d.isSystem ? '<span class="dtag">系统目录</span>' : ''}
+          ${d.added ? '<span class="dtag">已在扫描范围</span>' : '<span class="dadd" data-add="' + esc(d.path) + '">＋ 添加</span>'}
+        </button>`).join(''));
+    }
+  }
+  box.innerHTML = rows.join('');
+
+  $$('#dirList .dir-row').forEach((r) => {
+    r.onclick = (e) => {
+      const addPath = e.target && e.target.dataset ? e.target.dataset.add : null;
+      if (addPath) { e.stopPropagation(); doAddRoot(addPath); return; }
+      const go = r.dataset.go;
+      if (go !== undefined) browse(go);
+    };
+  });
+}
+
+async function browse(p) {
+  $('#dirList').innerHTML = `<div class="dir-empty">正在读取…</div>`;
+  try {
+    const j = await (await fetch('/api/browse?path=' + encodeURIComponent(p || ''), { cache: 'no-store' })).json();
+    if (!j.ok) {
+      // 关键：读不到就把内部路径清空，否则「添加当前目录」会加到一个
+      // 跟输入框里显示的完全不同的目录（用户看到 A、实际加的是 B）
+      DIR.path = '';
+      DIR.parent = null;
+      toast(j.error || '无法打开该目录', 'err');
+      $('#dirList').innerHTML = `<div class="dir-empty">${esc(j.error || '无法打开该目录')}<br>可以用「↑ 上级」回到可访问的位置。</div>`;
+      $('#dirCrumb').innerHTML = dirCrumbHtml('', '路径无效');
+      return;
+    }
+    DIR.path = j.path;
+    DIR.parent = j.parent;
+    $('#dirPath').value = j.path || '';
+    const sig = j.path ? (j.isDriveRoot ? '整个磁盘' : `可用 ${j.freeText || '—'}`) : '选择磁盘';
+    $('#dirCrumb').innerHTML = dirCrumbHtml(j.path, sig);
+    if (j.isSystem) toast('这是系统目录，扫描它会很慢，一般不需要', 'err');
+    // 目录名默认填进「显示名称」，但用户自己改过就不再覆盖
+    const base = j.path ? j.path.replace(/\/$/, '').split('/').pop() : '';
+    if (base && (!$('#dirLabel').value || DIR.autoLabel)) {
+      $('#dirLabel').value = base;
+      DIR.autoLabel = true;
+    }
+    renderDirList(j);
+  } catch (e) {
+    DIR.path = '';
+    DIR.parent = null;
+    $('#dirList').innerHTML = `<div class="dir-empty">读取失败：${esc(e.message)}</div>`;
+  }
+}
+
+/** 添加一个目录；整盘需二次确认 */
+async function doAddRoot(path, force) {
+  const label = ($('#dirLabel').value || '').trim();
+  const group = $('#dirGroup').value;
+  const btn = $('#dirPick');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/roots/add', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, label, group, force: !!force })
+    });
+    const j = await r.json();
+
+    if (!j.ok) {
+      if (j.code === 'DRIVE_ROOT') {
+        btn.disabled = false;
+        if (confirm(`${j.error}\n\n确定仍要把整个磁盘加入扫描范围吗？`)) {
+          await doAddRoot(path, true);
+        }
+        return;
+      }
+      toast(j.error || '添加失败', 'err');
+      return;
+    }
+
+    if (!j.added) { toast(j.message || '该目录已在扫描范围内'); return; }
+
+    $('#dirModal').classList.remove('open');
+    toast(j.keptDefault
+      ? `已添加「${j.label}」，并保留了播放器所在目录`
+      : `已添加「${j.label}」 · 正在扫描…`, 'ok');
+
+    await waitScanDone();
+    const lib = await reloadLibrary();
+    toast(`扫描完成 · ${lib.stats.total} 个文件 · ${lib.roots.length} 个目录`, 'ok');
+  } catch (e) {
+    toast('添加失败：' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$('#rootAdd').onclick = () => {
+  DIR.autoLabel = true;
+  $('#dirLabel').value = '';
+  $('#dirModal').classList.add('open');
+  browse('');
+};
+$('#dirClose').onclick = () => $('#dirModal').classList.remove('open');
+$('#dirModal').addEventListener('click', (e) => {
+  if (e.target.id === 'dirModal') $('#dirModal').classList.remove('open');
+});
+/** 用户输入的路径做规范化：统一斜杠，并保留盘符根目录末尾的斜杠
+ *  （Windows 上 "C:" 是「C 盘的当前目录」这种相对路径，必须写成 "C:/"） */
+function normInputPath(v) {
+  let s = String(v || '').trim().replace(/\\/g, '/');
+  if (/^[A-Za-z]:\/?$/.test(s)) return s[0].toUpperCase() + ':/';
+  return s.replace(/\/+$/, '');
+}
+
+$('#dirGo').onclick = () => {
+  const v = normInputPath($('#dirPath').value);
+  if (!v) { browse(''); return; }
+  DIR.autoLabel = true;
+  browse(v);
+};
+$('#dirPath').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#dirGo').click(); });
+// 用户手动改过名称之后，就不再被「自动填目录名」覆盖
+$('#dirLabel').addEventListener('input', () => { DIR.autoLabel = false; });
+$('#dirUp').onclick = () => browse(DIR.parent === null ? '' : DIR.parent);
+$('#dirPick').onclick = () => {
+  if (!DIR.path) { toast('先进入一个具体的文件夹，或用「add」按钮选择磁盘下的目录', 'err'); return; }
+  doAddRoot(DIR.path, false);
+};
+
+/* ══════════════════  联网补全曲风  ══════════════════ */
+$('#genreSync').onclick = async () => {
+  const btn = $('#genreSync');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const orig = '☁ 联网补全';
+  try {
+    let initialTotal = 0;
+    let guard = 0;
+    while (guard++ < 300) {
+      const r = await fetch('/api/genre-online', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 60 })
+      });
+      const j = await r.json();
+      if (!j.ok) { toast(j.error || '补全中断', 'err'); break; }
+      if (!j.online) { toast('当前无网络，无法联网补全（已保留本地分类结果）', 'err'); break; }
+      if (!initialTotal) initialTotal = j.remaining + j.processed;
+      const done = initialTotal ? Math.max(0, initialTotal - j.remaining) : 0;
+      btn.textContent = `☁ ${initialTotal ? Math.round((done / initialTotal) * 100) : 100}%`;
+      if (j.remaining === 0) break;
+    }
+    const un = (S.lib.genres || []).find((g) => g.id === '__unknown');
+    toast(initialTotal ? `联网曲风补全完成${un ? ` · 剩余未识别 ${un.count} 首` : ''}` : '没有需要补全的歌曲', 'ok');
+  } catch (e) { toast('补全失败：' + e.message, 'err'); }
+  btn.disabled = false;
+  btn.textContent = orig;
+  try { await reloadLibrary(); } catch { /* 保持现状 */ }
+};
+
+/* ══════════════════  事件绑定  ══════════════════ */
+$('#play').onclick = () => {
+  if (!S.cur) {
+    if (S.filtered.length) playTrack(S.filtered[0], S.filtered);
+    return;
+  }
+  if (S.cur.kind === 'video') { openWithSystem(S.cur); return; }   // 视频的「播放」= 再次交给本地播放器
+  if (activeMedia.paused) activeMedia.play().catch(() => {}); else activeMedia.pause();
+};
+$('#next').onclick = () => nextTrack(false);
+$('#prev').onclick = prevTrack;
+$('#shuffle').onclick = () => {
+  S.shuffle = !S.shuffle;
+  $('#shuffle').classList.toggle('on', S.shuffle);
+  const cur = S.cur ? S.queue.indexOf(S.cur.id) : -1;
+  rebuildOrder();
+  if (cur >= 0) S.pos = S.order.indexOf(cur);
+  toast(S.shuffle ? '随机播放已开启' : '随机播放已关闭');
+};
+$('#repeat').onclick = () => {
+  S.repeat = S.repeat === 'off' ? 'all' : S.repeat === 'all' ? 'one' : 'off';
+  const el = $('#repeat');
+  el.classList.toggle('on', S.repeat !== 'off');
+  el.title = { off: '不循环 (R)', all: '列表循环 (R)', one: '单曲循环 (R)' }[S.repeat];
+  el.querySelector('svg').innerHTML = S.repeat === 'one'
+    ? '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="15" font-size="9" fill="currentColor" stroke="none" text-anchor="middle" font-weight="700">1</text>'
+    : '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>';
+  save();
+};
+$('#mute').onclick = () => {
+  if (S.volume > 0) { S.lastVol = S.volume; S.volume = 0; }
+  else { S.volume = S.lastVol || 1; }
+  applyVolume();
+};
+$('#rate').onchange = (e) => {
+  S.rate = Number(e.target.value);
+  audio.playbackRate = S.rate; video.playbackRate = S.rate;
+  toast(`播放速度 ${S.rate}×`);
+};
+$('#sysOpen').onclick = () => openWithSystem();
+$('#queueBtn').onclick = () => {
+  const dr = $('#drawer');
+  dr.classList.toggle('open');
+  // 打开时定位到正在播放的那一条，避免队列很长时找不到当前文件
+  if (dr.classList.contains('open') && S.cur) {
+    const i = S.queue.indexOf(S.cur.id);
+    const row = i >= 0 ? $(`.qrow[data-i="${i}"]`) : null;
+    if (row) requestAnimationFrame(() => { if (row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+  }
+};
+$('#qClose').onclick = () => $('#drawer').classList.remove('open');
+$('#qClear').onclick = () => {
+  S.queue = []; S.order = []; S.pos = -1; S.cur = null;
+  audio.pause(); video.pause(); audio.removeAttribute('src');
+  save(); renderQueue(); updateBadge(); updatePlayerUI(); markCurrentRow();
+  toast('队列已清空');
+};
+$('#qExport').onclick = async () => {
+  if (!S.queue.length) return toast('队列为空', 'err');
+  try {
+    const r = await fetch('/api/export', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: S.queue, name: `播放列表_${new Date().toISOString().slice(0, 10)}` })
+    });
+    const j = await r.json();
+    if (j.ok) toast(`已导出 ${j.count} 首 → 播放列表导出/${j.file.split(/[\\/]/).pop()}`, 'ok');
+    else toast(j.error || '导出失败', 'err');
+  } catch (e) { toast('导出失败：' + e.message, 'err'); }
+};
+
+$('#q').addEventListener('input', (e) => {
+  S.q = e.target.value;
+  $('#searchWrap').classList.toggle('has', !!S.q);
+  render();
+});
+$('#qClear').onclick = () => {
+  S.q = ''; $('#q').value = '';
+  $('#searchWrap').classList.remove('has');
+  render();
+};
+$('#sort').value = S.sort;
+$('#sort').onchange = (e) => { S.sort = e.target.value; save(); render(); };
+
+$$('#kindSeg button').forEach((b) => b.onclick = () => {
+  S.kind = b.dataset.kind;
+  $$('#kindSeg button').forEach((x) => x.classList.toggle('on', x === b));
+  render();
+});
+$$('#viewSeg button').forEach((b) => b.onclick = () => {
+  S.view = b.dataset.view; save();
+  $$('#viewSeg button').forEach((x) => x.classList.toggle('on', x === b));
+  render();
+});
+function syncSegs() {
+  $$('#kindSeg button').forEach((x) => x.classList.toggle('on', x.dataset.kind === S.kind));
+  $$('#viewSeg button').forEach((x) => x.classList.toggle('on', x.dataset.view === S.view));
+}
+
+$('#mVidClose').onclick = () => { video.pause(); $('#modal').classList.remove('open'); };
+$('#modal').addEventListener('click', (e) => {
+  if (e.target.id === 'modal') { video.pause(); $('#modal').classList.remove('open'); }
+});
+
+/* ── 键盘快捷键 ── */
+document.addEventListener('keydown', (e) => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable;
+  if (e.key === 'Escape') {
+    if ($('#modal').classList.contains('open')) { video.pause(); $('#modal').classList.remove('open'); }
+    else if ($('#delModal').classList.contains('open')) $('#delModal').classList.remove('open');
+    else if ($('#dirModal').classList.contains('open')) $('#dirModal').classList.remove('open');
+    else if ($('#drawer').classList.contains('open')) $('#drawer').classList.remove('open');
+    else if (typing) e.target.blur();
+    return;
+  }
+  if (typing) return;
+  switch (e.key) {
+    case ' ':      e.preventDefault(); $('#play').click(); break;
+    case 'ArrowRight': activeMedia.currentTime = Math.min((activeMedia.currentTime || 0) + 5, activeMedia.duration || 1e9); break;
+    case 'ArrowLeft':  activeMedia.currentTime = Math.max((activeMedia.currentTime || 0) - 5, 0); break;
+    case 'ArrowUp':   e.preventDefault(); S.volume = Math.min(1, S.volume + .05); applyVolume(); break;
+    case 'ArrowDown': e.preventDefault(); S.volume = Math.max(0, S.volume - .05); applyVolume(); break;
+    case 'n': case 'N': nextTrack(false); break;
+    case 'p': case 'P': prevTrack(); break;
+    case 'm': case 'M': $('#mute').click(); break;
+    case 's': case 'S': $('#shuffle').click(); break;
+    case 'r': case 'R': $('#repeat').click(); break;
+    case 'q': case 'Q': $('#queueBtn').click(); break;
+    case '/': e.preventDefault(); $('#q').focus(); break;
+  }
+});
+
+/* ── 启动 ── */
+syncSegs();
+applyVolume();
+buildRoots();
+bindInfiniteScroll();
+$('#shuffle').classList.toggle('on', S.shuffle);
+$('#repeat').classList.toggle('on', S.repeat !== 'off');
+$('#repeat').title = { off: '不循环 (R)', all: '列表循环 (R)', one: '单曲循环 (R)' }[S.repeat];
+
+// 支持 #add-dir 直达「添加扫描目录」（书签/排查时有用）
+if (location.hash === '#add-dir') setTimeout(() => $('#rootAdd').click(), 400);
+
+boot();
+</script>
+</body>
+</html>
