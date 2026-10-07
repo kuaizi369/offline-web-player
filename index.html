@@ -108,6 +108,25 @@ body.resizing-v .vsplit{pointer-events:auto}
 .about .ab-repo .ab-ext{width:11px;height:11px;flex:none;opacity:.55}
 .about .ab-repo:hover .ab-ext{opacity:.9}
 
+/* 转换缓存：占用显示 + 一键清空（只在服务端能转码时出现） */
+.about .ab-cache{
+  grid-column:1/-1;display:flex;align-items:center;gap:8px;min-width:0;margin-top:2px;
+}
+.about .ab-cache[hidden]{display:none}
+.about .ab-cache .ab-cname{font-size:11px;color:var(--muted);letter-spacing:.4px;flex:none}
+.about .ab-cache .ab-cval{
+  font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums;
+  flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.about .ab-cache.warn .ab-cval{color:#FFB26B;font-weight:600}
+.about .ab-cache .ab-cbtn{
+  flex:none;font:inherit;font-size:11px;padding:2px 8px;border-radius:6px;cursor:pointer;
+  background:var(--panel-3);border:1px solid var(--line);color:var(--text-2);
+  transition:color .15s,border-color .15s;
+}
+.about .ab-cache .ab-cbtn:hover:not(:disabled){color:#FF8A8A;border-color:rgba(255,107,107,.45)}
+.about .ab-cache .ab-cbtn:disabled{opacity:.4;cursor:default}
+
 .nav-label{font-size:11px;color:var(--muted);padding:14px 10px 6px;letter-spacing:.6px;font-weight:500}
 
 /* 专辑列表 */
@@ -385,6 +404,13 @@ body.resizing-v .vsplit{pointer-events:auto}
 .lbl-row .gnbtn{white-space:nowrap}
 /* 曲风徽标（区别于普通标签的紫色调） */
 .ttl .tg.gtag{background:rgba(124,92,255,.16);color:#B7A6FF}
+/* 「已转码」标记：点一下就清掉这个视频的转码产物，下次播放重新转 */
+.ttl .tg.tclear{
+  font:inherit;font-size:10px;cursor:pointer;border:1px solid transparent;
+  background:rgba(34,211,238,.14);color:#22D3EE;
+  transition:background .15s,color .15s,border-color .15s;
+}
+.ttl .tg.tclear:hover{background:rgba(255,107,107,.16);color:#FF8A8A;border-color:rgba(255,107,107,.35)}
 /* 删除按钮悬停警示色 */
 .tlist .ico[data-a="del"]:hover{color:#FF6B6B}
 
@@ -564,6 +590,11 @@ body.resizing-v .vsplit{pointer-events:auto}
     <div class="about">
       <span class="ab-k">作者</span><span class="ab-v" id="abAuthor">筷子</span>
       <span class="ab-k">版本</span><span class="ab-v num" id="abVersion">—</span>
+      <div class="ab-cache" id="abCache" hidden>
+        <span class="ab-cname">缓存</span>
+        <span class="ab-cval" id="abCacheVal">—</span>
+        <button class="ab-cbtn" id="abCacheClear" title="清空全部转码产物；正在转换或播放的文件会自动跳过">清空</button>
+      </div>
       <a class="ab-repo" id="abRepo" href="https://github.com/kuaizi369/offline-web-player"
          target="_blank" rel="noopener noreferrer" title="在浏览器中打开 GitHub 仓库">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.35-1.29-1.71-1.29-1.71-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.25 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12A11.5 11.5 0 0 0 12 .5Z"/></svg>
@@ -838,7 +869,8 @@ const S = {
   rate: 1,
   page: 0,            // 列表分页渲染游标
   filtered: [],
-  transcode: false    // 服务端能否把浏览器解不了的视频转成可播格式（/api/ping 下发）
+  transcode: false,   // 服务端能否把浏览器解不了的视频转成可播格式（/api/ping 下发）
+  cacheIds: new Set() // 已有转码产物的视频 id（/api/cache 下发），用于列表里标「已转码」
 };
 
 const audio = $('#audio');
@@ -1006,6 +1038,9 @@ async function boot() {
     if (!st.total) {
       toast('没有索引到媒体文件 —— 点左侧「＋ 添加目录」选择你的音乐 / 视频文件夹', 'err');
     }
+    refreshCache().then((changed) => {   // 侧栏「缓存」占用；命中列表若非空，列表标记也要跟上
+      if (changed && S.lib) render();
+    });   // 不 await，别拖慢进页面
   } catch (err) {
     $('#boot').innerHTML = `<div><h2 style="color:#FFB29B">媒体库载入失败</h2>
       <p style="margin-top:10px">${esc(err.message)}</p></div>`;
@@ -1072,6 +1107,87 @@ function applyAppInfo(info) {
     $('#abRepoUrl').textContent = m ? m[1].replace(/\/+$/, '') : String(info.repo).replace(/^https?:\/\//i, '');
   }
 }
+
+/* ── 转换缓存：侧栏显示占用 + 一键清空 ──
+   只在服务端装了 ffmpeg 时出现；占用超过 1GB 转成警示色。
+   列表里那个「已转码」标记也靠这里下发的 id 集合。 */
+const CACHE_WARN_BYTES = 1024 * 1024 * 1024;
+let cacheKey = '';          // 上次命中的集合指纹，用来判断要不要重绘列表
+
+/** 拉一次缓存状态。返回值 = 命中集合相比上次是否变了 */
+async function refreshCache() {
+  const box = $('#abCache');
+  if (!box) return false;
+  if (!serviceMode || !S.transcode) { box.hidden = true; return false; }
+  try {
+    const r = await fetch('/api/cache', { cache: 'no-store' });
+    if (!r.ok) throw new Error('http ' + r.status);
+    const d = await r.json();
+    S.cacheIds = new Set(d.ids || []);
+    const key = [...S.cacheIds].sort().join(',');
+    const changed = key !== cacheKey;
+    cacheKey = key;
+
+    const n = d.count || 0;
+    $('#abCacheVal').textContent = n ? `${d.sizeText} · ${n} 个` : '暂无';
+    box.classList.toggle('warn', (d.bytes || 0) >= CACHE_WARN_BYTES);
+    $('#abCacheClear').disabled = !n;
+    box.hidden = false;
+    box.title = `转码产物存于 ${d.dir}\n总量上限 ${d.limitGB} GB，超出后自动淘汰最久未使用的`;
+    return changed;
+  } catch {
+    box.hidden = true;      // 服务不可用时不占地方
+    return false;
+  }
+}
+
+/** 清空全部转码产物（源文件不动，下次播放重新转） */
+async function clearAllCache(btn) {
+  if (!confirm('清空全部转码产物？\n\n源文件不受影响，这些视频下次播放时会重新转换。')) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '清理中…';
+  try {
+    const r = await fetch('/api/cache', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'clear' })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || '清除失败');
+    toast(d.busy ? `已清空 ${d.removed} 个（${d.busy} 个正被占用，已跳过）`
+                 : `已清空 ${d.removed} 个转码产物`, 'ok');
+  } catch (err) {
+    toast('清除失败：' + (err.message || err), 'err');
+  }
+  btn.textContent = old;
+  await refreshCache();
+  render();
+}
+
+/** 只清某一个视频的转码产物（列表里点「已转码 ×」） */
+async function clearOneCache(t) {
+  try {
+    const r = await fetch('/api/cache', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'clearOne', id: t.id })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) throw new Error(d.error || '清除失败');
+    toast(d.removed ? `已清除《${t.title}》的转码产物` : '该视频没有转码产物', d.removed ? 'ok' : '');
+  } catch (err) {
+    toast('清除失败：' + (err.message || err), 'err');
+  }
+  await refreshCache();
+  render();
+}
+
+$('#abCacheClear').onclick = (e) => clearAllCache(e.currentTarget);
+
+// 转码发生在新标签页 /play 里，本页并不知道 —— 窗口重新获得焦点时对一次账
+window.addEventListener('focus', async () => {
+  if (!serviceMode || !S.transcode) return;
+  if (await refreshCache()) render();
+});
 
 function buildSidebar() {
   const s = S.lib.stats;
@@ -1319,9 +1435,11 @@ function appendChunk() {
           : esc(t.title)}
         ${t.kind === 'video' ? '<span class="tg">视频</span>' : ''}
         ${t.genre && GENRE_NAME[t.genre] ? `<span class="tg gtag" title="曲风">${esc(GENRE_NAME[t.genre])}</span>` : ''}
-        ${!t.native ? (S.transcode
-            ? '<span class="tg" style="color:#22D3EE" title="这个容器的编码浏览器解不了，点开时会在浏览器里先转成 MP4">转换后可播</span>'
-            : '<span class="tg" style="color:#FFB26B" title="浏览器解不了，需要用系统播放器打开">需系统播放器</span>') : ''}
+        ${t.kind === 'video' && S.cacheIds.has(t.id)
+          ? '<button class="tg tclear" data-a="cacheoff" title="已转码，点此清除这个视频的转码产物（下次播放会重新转换）">已转码 ×</button>'
+          : (!t.native ? (S.transcode
+              ? '<span class="tg" style="color:#22D3EE" title="这个容器的编码浏览器解不了，点开时会在浏览器里先转成 MP4">转换后可播</span>'
+              : '<span class="tg" style="color:#FFB26B" title="浏览器解不了，需要用系统播放器打开">需系统播放器</span>') : '')}
         ${t.tags.slice(0, 2).map((g) => `<span class="tg">${esc(g)}</span>`).join('')}
       </td>
       <td class="art" title="${esc(t.artist || '未知')}">${esc(t.artist || '—')}</td>
@@ -1406,6 +1524,7 @@ function renderList(content, list, insideAlbum = false) {
       case 'sys':     openWithSystem(t); break;
       case 'reveal':  reveal(t); break;
       case 'del':     askDelete([t]); break;
+      case 'cacheoff': clearOneCache(t); break;   // 「已转码 ×」：清掉这个视频的转码产物
     }
   });
   wrap.addEventListener('dblclick', (e) => {
@@ -1793,6 +1912,7 @@ $('#delGo').onclick = async () => {
 async function reloadLibrary() {
   const lib = await fetchLibrary();     // 若恰好正在扫描，会等到扫完
   applyLibrary(lib);
+  if (await refreshCache() && S.lib) render();   // 库变了，缓存命中集合可能也变了
   return lib;
 }
 

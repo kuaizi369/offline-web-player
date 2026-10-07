@@ -1102,6 +1102,37 @@ function cacheUsage() {
   return { count: list.length, bytes: list.reduce((s, e) => s + e.size, 0) };
 }
 
+/** 删除某个媒体对应的转码产物。返回 'gone' | 'busy' | 'none' */
+function dropCacheFor(track, abs) {
+  const fp = cachePathFor(track, abs);
+  let exists = false;
+  try { exists = fs.existsSync(fp); } catch { /* 忽略 */ }
+  if (!exists) return 'none';
+  try {
+    fs.unlinkSync(fp);
+    JOBS.delete(track.id);
+    return 'gone';
+  } catch {
+    return 'busy';           // 文件被占用（多半是正在转换或正在播）
+  }
+}
+
+/**
+ * 当前缓存命中哪些媒体。供前端在列表里标出「已转码」，并支持单条清除。
+ * 只在需要转换的视频里找（能直接播的格式不会产生缓存），避免无谓的 stat。
+ */
+function cachedTrackIds() {
+  if (!LIBRARY || !Array.isArray(LIBRARY.tracks)) return [];
+  const out = [];
+  for (const t of LIBRARY.tracks) {
+    if (t.kind !== 'video') continue;
+    const abs = ID_INDEX.get(t.id);
+    if (!abs) continue;
+    try { if (fs.existsSync(cachePathFor(t, abs))) out.push(t.id); } catch { /* 忽略 */ }
+  }
+  return out;
+}
+
 /** 超出上限时按最久未使用清理 */
 function evictCache() {
   if (!CACHE_MAX_BYTES) return;
@@ -1708,11 +1739,24 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/cache') {
       if (req.method === 'POST') {
         const body = await readBody(req);
+
+        // 只清某一个视频的转码产物
+        if (body.action === 'clearOne') {
+          const abs = resolveMediaPath(body.id);
+          const t = findTrack(body.id);
+          if (!abs || !t) return sendJSON(res, 404, { ok: false, error: '媒体不存在或不在媒体库范围内' });
+          const r = dropCacheFor(t, abs);
+          if (r === 'busy') return sendJSON(res, 409, { ok: false, error: '文件正被占用（转换或播放中），稍后再试' });
+          return sendJSON(res, 200, { ok: true, removed: r === 'gone' ? 1 : 0, id: t.id });
+        }
+
         if (body.action === 'clear') {
-          let removed = 0;
-          for (const e of cacheEntries()) { try { fs.unlinkSync(e.fp); removed++; } catch { /* 占用中 */ } }
+          let removed = 0, busy = 0;
+          for (const e of cacheEntries()) {
+            try { fs.unlinkSync(e.fp); removed++; } catch { busy++; /* 占用中 */ }
+          }
           JOBS.clear();
-          return sendJSON(res, 200, { ok: true, removed });
+          return sendJSON(res, 200, { ok: true, removed, busy });
         }
       }
       const use = cacheUsage();
@@ -1724,7 +1768,8 @@ const server = http.createServer(async (req, res) => {
         sizeText: humanSize(use.bytes),
         limitGB: CACHE_MAX_BYTES / 1024 / 1024 / 1024,
         dir: CACHE_DIR,
-        ffmpeg: FF.ok
+        ffmpeg: FF.ok,
+        ids: cachedTrackIds()
       });
     }
 
