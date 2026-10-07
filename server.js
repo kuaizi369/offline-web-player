@@ -5,7 +5,7 @@
  *
  * 能力：
  *  1. 递归扫描 config.json 中配置的媒体库目录，建立索引
- *  2. 分类：大类（音乐 / 视频 / 家族 family）+ 文件夹专辑 + 智能关键词标签
+ *  2. 分类：大类（音乐 / 视频）+ 文件夹专辑 + 智能关键词标签
  *  3. 以支持 Range 断点续传的流方式提供媒体文件（拖动进度条即时响应）
  *  4. 调起系统默认播放器 / 在资源管理器中定位文件
  */
@@ -29,7 +29,6 @@ const DEFAULT_CONFIG = {
   roots: [],
   excludeDirs: ['node_modules', '.git', '.workbuddy', '$RECYCLE.BIN', 'System Volume Information'],
   minSizeKB: 30,
-  familyKeywords: ['family', '家族', '家庭', '家人'],
   tags: []
 };
 
@@ -457,12 +456,6 @@ async function buildLibrary() {
         }
       }
 
-      // ── 家族 family：命中关键词直接归入家族大类
-      const isFamily = (CONFIG.familyKeywords || []).some(
-        (k) => k && haystack.includes(String(k).toLowerCase())
-      );
-      if (isFamily && !tags.includes('家族 family')) tags.push('家族 family');
-
       const { artist, title } = parseName(stem);
 
       // ── 曲风：联网缓存（最准）→ 离线关键词规则 → 未识别
@@ -486,8 +479,7 @@ async function buildLibrary() {
         album: album.name,
         albumPath: relDir || '',
         rootLabel,
-        group: isFamily ? '家族' : rootGroup,
-        family: isFamily,
+        group: rootGroup,
         relPath,
         size: st.size,
         sizeText: humanSize(st.size),
@@ -525,10 +517,10 @@ async function buildLibrary() {
     SCAN.phase = 'walking';
   }
 
-  // 标签按出现频次排序，「家族 family」始终置顶便于发现
+  // 标签按出现频次排序
   const tags = [...tagStats.entries()]
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => (a.name === '家族 family' ? -1 : b.name === '家族 family' ? 1 : b.count - a.count));
+    .sort((a, b) => b.count - a.count);
 
   tracks.sort((a, b) => a.album.localeCompare(b.album, 'zh') || a.file.localeCompare(b.file, 'zh', { numeric: true }));
 

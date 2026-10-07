@@ -25,6 +25,7 @@
   --r-s:8px; --r-m:12px; --r-l:18px;
   --ease:cubic-bezier(.32,.72,0,1);
   --side-w:264px;   /* 侧栏宽度，可拖拽右侧边缘调整，双击复位 */
+  --pane-nav:160px;  /* 侧栏「媒体分类」区高度，拖分隔条调整 */
   --pane-root:164px; /* 侧栏内「扫描目录」区高度，拖分隔条调整 */
   --pane-genre:150px;/* 侧栏内「曲风」区高度，拖分隔条调整 */
 }
@@ -85,7 +86,7 @@ body.resizing-v .vsplit{pointer-events:auto}
 .brand-txt strong{display:block;font-size:13.5px;font-weight:600;letter-spacing:.2px}
 .brand-txt span{font-size:11px;color:var(--muted)}
 
-.nav{padding:0 10px;flex:none}
+.nav{padding:0 10px;flex:none;height:var(--pane-nav);min-height:0;overflow-y:auto}
 .nav-label{font-size:11px;color:var(--muted);padding:14px 10px 6px;letter-spacing:.6px;font-weight:500}
 .nav-item{
   display:flex;align-items:center;gap:10px;width:100%;
@@ -211,7 +212,14 @@ body.resizing-v .vsplit{pointer-events:auto}
 .chip.on{background:var(--accent-soft);color:#C9BCFF;border-color:rgba(124,92,255,.4)}
 
 /* 标签条 */
-.tagbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:18px}
+/* 智能标签栏：滚动歌曲列表时固定在内容区顶部 */
+.tagbar{
+  display:flex;gap:7px;flex-wrap:wrap;
+  position:sticky;top:-22px;z-index:7;   /* top 对齐 .content 的 padding-top，钉到内容区最上沿 */
+  background:var(--bg);
+  margin:-22px -22px 0;padding:14px 22px 10px;
+  border-bottom:1px solid var(--line);
+}
 .tagbar .chip{cursor:pointer;transition:.15s;font-size:11.5px;padding:4px 11px}
 .tagbar .chip:hover{border-color:var(--line-strong);color:var(--text)}
 
@@ -402,14 +410,17 @@ body.resizing-v .vsplit{pointer-events:auto}
 
 /* ── 侧栏内分区：可纵向拖动的分隔条 ── */
 .vsplit{
-  position:relative;flex:none;height:10px;margin:-2px 0;
+  position:relative;flex:none;height:12px;margin:-2px 0;
   cursor:row-resize;background:transparent;z-index:6;
 }
 .vsplit::after{
-  content:"";position:absolute;left:12px;right:12px;top:4.5px;height:1px;
-  background:var(--line);opacity:.6;transition:background .15s,opacity .15s;
+  content:"";position:absolute;left:12px;right:12px;top:5.5px;height:1px;
+  background:var(--line-strong);opacity:.9;transition:background .15s,opacity .15s,box-shadow .15s;
 }
-.vsplit:hover::after,.vsplit.on::after{background:var(--accent);opacity:.9;top:4px;height:2px}
+.vsplit:hover::after,.vsplit.on::after{
+  background:var(--accent);opacity:1;top:5px;height:2px;
+  box-shadow:0 0 8px rgba(124,92,255,.75);
+}
 /* 定高分区（高度由 JS 写入 CSS 变量）；末区分自动吃掉剩余空间 */
 .pane-fixed{flex:none;height:var(--pane-genre);min-height:0;padding-bottom:8px!important}
 .pane-auto{min-height:92px}
@@ -540,6 +551,7 @@ body.resizing-v .vsplit{pointer-events:auto}
     </div>
 
     <nav class="nav" id="nav"></nav>
+    <div class="vsplit" data-vs="nav" title="上下拖动调整「媒体分类」与「扫描目录」的高度 · 双击复位全部分区"></div>
 
     <div class="nav-label lbl-row" style="padding:16px 10px 6px">
       <span>扫描目录</span>
@@ -552,14 +564,14 @@ body.resizing-v .vsplit{pointer-events:auto}
     <div class="rlist-foot">
       <button class="mini" id="rootReset" title="清空全部扫描目录，恢复为「只扫描播放器所在目录及其子目录」">↺ 恢复默认（仅本目录）</button>
     </div>
-    <div class="vsplit" data-vs="root" title="上下拖动调整「扫描目录」与「曲风」的高度 · 双击复位"></div>
+    <div class="vsplit" data-vs="root" title="上下拖动调整「扫描目录」与「曲风」的高度 · 双击复位全部分区"></div>
 
     <div class="nav-label" style="padding:8px 20px 6px;display:flex;align-items:center;justify-content:space-between">
       <span>曲风</span>
       <button class="gnbtn" id="genreSync" title="对「未识别」的歌曲联网查询曲风（iTunes 资料库，结果会缓存）">☁ 联网补全</button>
     </div>
     <div class="album-scroll pane-fixed" id="genreNav"></div>
-    <div class="vsplit" data-vs="genre" title="上下拖动调整「曲风」与「专辑 / 文件夹」的高度 · 双击复位"></div>
+    <div class="vsplit" data-vs="genre" title="上下拖动调整「曲风」与「专辑 / 文件夹」的高度 · 双击复位全部分区"></div>
 
     <div class="nav-label" style="padding:8px 20px 6px">专辑 / 文件夹</div>
     <div class="album-scroll pane-auto" id="albumNav"></div>
@@ -1059,7 +1071,7 @@ function buildRoots() {
 
 function buildNav() {
   const groups = S.lib.groups;
-  const order = ['音乐', '视频', '家族'];
+  const order = ['音乐', '视频'];
   const names = [...order.filter((n) => groups.some((g) => g.name === n)),
                  ...groups.map((g) => g.name).filter((n) => !order.includes(n))];
 
@@ -2277,42 +2289,51 @@ function setSideW(px, persist) {
 })();
 
 /* ══════════════════  侧栏内分区高度拖拽  ══════════════════
-   侧栏纵向三块：「扫描目录」(root) /「曲风」(genre) /「专辑·文件夹」(album)。
-   root 与 genre 为定高（写入 CSS 变量），album 自动吃掉剩余高度。
-   拖 root 分隔条 → root 与 genre 此消彼长；拖 genre 分隔条 → genre 与 album 此消彼长。 */
-const PANE_MIN  = { root: 56, genre: 56 };      // 各分区最小高度
-const PANE_DEF  = { root: 164, genre: 150 };    // 双击复位值
+   侧栏纵向：媒体分类(nav) / 扫描目录(root) / 曲风(genre) 三个定高分区，
+   专辑·文件夹(album) 自动吃掉剩余高度。三条边界各自可拖：
+   拖某条边界 = 调整它上方分区的高度，空间向下方分区依次借（压到下限为止）。 */
+const PANE_ORDER = ['nav', 'root', 'genre'];
+const PANE_MIN  = { nav: 56, root: 56, genre: 56 };    // 各分区最小高度
+const PANE_DEF  = { nav: 160, root: 164, genre: 150 }; // 双击复位值
 const PANE_ALBUM_MIN = 92;                      // 末区最小高度，保证不会被压没
-const PANE_ROOT  = $('#rootNav');
-const PANE_GENRE = $('#genreNav');
+const PANE_EL    = { nav: $('#nav'), root: $('#rootNav'), genre: $('#genreNav') };
 const PANE_ALBUM = $('#albumNav');
-const PANE = { root: PANE_DEF.root, genre: PANE_DEF.genre };   // 当前高度（唯一数据源）
+const PANE = { ...PANE_DEF };   // 当前高度（唯一数据源）
 
 function setPaneH(key, px) {
   const v = Math.max(PANE_MIN[key], Math.round(px));
   PANE[key] = v;
   document.documentElement.style.setProperty('--pane-' + key, v + 'px');
 }
-/** 三区可用总高 = 侧栏高 - 品牌区/媒体分类/标题行/按钮等固定占用 */
+/** 三区可用总高 = 侧栏高 - 品牌区/媒体分类/标题行/按钮等固定占用
+    注意：必须跳过 position:absolute/fixed 的子元素 —— 宽度手柄 .side-grip 是
+    top:0;bottom:0，offsetHeight 等于整个侧栏高，算进去会把可用高度压成 0。 */
 function paneAvail() {
-  const side = PANE_ROOT.closest('.side');
+  const side = PANE_EL.root.closest('.side');
   if (!side) return 0;
+  const sideH = side.clientHeight;
+  if (!sideH) return 0;                                    // 侧栏尚未布局（隐藏/未渲染）
   let fixed = 0;
   Array.prototype.forEach.call(side.children, (c) => {
-    if (c === PANE_ROOT || c === PANE_GENRE || c === PANE_ALBUM) return;
-    fixed += c.offsetHeight || 0;
+    if (c === PANE_EL.nav || c === PANE_EL.root || c === PANE_EL.genre || c === PANE_ALBUM) return;
+    const cs = getComputedStyle(c);
+    if (cs.position === 'absolute' || cs.position === 'fixed') return;   // 脱离文档流，不占高度
+    // 连 margin 一起算：分隔条用了负 margin 收间距，漏算会让可用高度偏小
+    fixed += c.offsetHeight
+      + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
   });
-  return Math.max(0, side.clientHeight - fixed);
+  return Math.max(0, sideH - Math.max(0, fixed));          // 负 margin 不得让可用值虚高
 }
 
 function savePanes() {
-  localStorage.setItem('pv.paneH', JSON.stringify({ root: PANE.root, genre: PANE.genre }));
+  localStorage.setItem('pv.paneH', JSON.stringify({
+    nav: PANE.nav, root: PANE.root, genre: PANE.genre
+  }));
 }
 function restorePanes() {
   try {
     const s = JSON.parse(localStorage.getItem('pv.paneH') || 'null');
-    if (s && Number(s.root) > 0) setPaneH('root', s.root);
-    if (s && Number(s.genre) > 0) setPaneH('genre', s.genre);
+    if (s) for (const k of PANE_ORDER) if (Number(s[k]) > 0) setPaneH(k, s[k]);
   } catch (e) { /* 缓存坏了就用默认值 */ }
 }
 /** 窗口变矮时按比例收缩定高分区，保证末区不小于下限 */
@@ -2320,71 +2341,85 @@ function clampPanes() {
   const avail = paneAvail();
   if (avail <= 0) return;                        // 量不到（未布局/隐藏）就别乱改
   const limit = Math.max(0, avail - PANE_ALBUM_MIN);
-  if (PANE.root + PANE.genre <= limit) return;
-  // 先按比例收缩；若某区已到下限导致没缩够，再让余量大的那一区继续退
-  const k = limit / (PANE.root + PANE.genre);
-  let r = Math.max(PANE_MIN.root, Math.round(PANE.root * k));
-  let g = Math.max(PANE_MIN.genre, Math.round(PANE.genre * k));
-  if (r + g > limit) {
-    const over = r + g - limit;
-    if (g - PANE_MIN.genre >= r - PANE_MIN.root) g = Math.max(PANE_MIN.genre, g - over);
-    else r = Math.max(PANE_MIN.root, r - over);
+  const sum = PANE_ORDER.reduce((s, k) => s + PANE[k], 0);
+  if (sum <= limit) return;
+  // 先按比例收缩；某区到下限后没缩够的，由余量大的区继续退
+  const k = limit / sum;
+  const hs = {};
+  PANE_ORDER.forEach((p) => { hs[p] = Math.max(PANE_MIN[p], Math.round(PANE[p] * k)); });
+  let over = PANE_ORDER.reduce((s, p) => s + hs[p], 0) - limit;
+  for (let guard = 0; guard < 8 && over > 0; guard++) {
+    const slack = PANE_ORDER
+      .map((p) => ({ p, v: hs[p] - PANE_MIN[p] }))
+      .filter((x) => x.v > 0)
+      .sort((a, b) => b.v - a.v)[0];
+    if (!slack) break;                           // 全部触底（窗口极矮），只能溢出
+    const cut = Math.min(slack.v, over);
+    hs[slack.p] -= cut;
+    over -= cut;
   }
-  setPaneH('root', r);
-  setPaneH('genre', g);
+  PANE_ORDER.forEach((p) => setPaneH(p, hs[p]));
 }
 
-/** 拖动中实时算高度：base/avail 为按下那一刻的快照 */
+/** 拖动某条边界：调整它上方分区（key）的高度，dy>0 = 该分区变高。
+    空间从下方分区依次借：先紧挨着的，压到下限后继续往后；专辑区隐式吸收剩余，
+    始终保底 PANE_ALBUM_MIN。base/avail 为按下那一刻的快照，防连续拖动累积误差。 */
 function dragPane(key, dy, base, avail) {
-  if (key === 'root') {
-    // 扫描目录 ↔ 曲风：两区此消彼长，总额不变
-    const sum = base.root + base.genre;
-    const r = Math.min(sum - PANE_MIN.genre, Math.max(PANE_MIN.root, base.root + dy));
-    setPaneH('root', r);
-    setPaneH('genre', sum - r);
-  } else {
-    // 曲风 ↔ 专辑：专辑是自动高度，改 genre 即可，最多把专辑压到下限
-    const max = Math.max(PANE_MIN.genre, avail - PANE_ALBUM_MIN - PANE.root);
-    setPaneH('genre', Math.min(max, Math.max(PANE_MIN.genre, base.genre + dy)));
+  const k = PANE_ORDER.indexOf(key);
+  let aboveSum = 0, belowMin = 0;
+  PANE_ORDER.forEach((p, i) => {
+    if (i < k) aboveSum += base[p];
+    else if (i > k) belowMin += PANE_MIN[p];
+  });
+  const cap = avail - PANE_ALBUM_MIN - aboveSum - belowMin;
+  const h = Math.max(PANE_MIN[key], Math.min(base[key] + dy, cap));
+  setPaneH(key, h);
+  let need = h - base[key];                      // >0: 下方共需腾出；<0: 下方可分得
+  for (let j = k + 1; j < PANE_ORDER.length && need !== 0; j++) {
+    const p = PANE_ORDER[j];
+    if (need > 0) {
+      const take = Math.min(base[p] - PANE_MIN[p], need);
+      if (take > 0) { setPaneH(p, base[p] - take); need -= take; }
+    } else {
+      setPaneH(p, base[p] - need);               // 释放的空间全给紧挨着的下一区
+      need = 0;
+    }
   }
 }
 
 (() => {
   $$('.vsplit').forEach((bar) => {
     const key = bar.dataset.vs;
-    let dragging = false, y0 = 0, base = null, avail = 0;
 
     bar.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      dragging = true;
-      y0 = e.clientY;
-      base = { root: PANE.root, genre: PANE.genre };   // 只在按下时量一次
-      avail = paneAvail();
+      if (e.button !== 0 || bar.dataset.dragging) return;
+      bar.dataset.dragging = '1';
+      const y0 = e.clientY;
+      const base = { ...PANE };                      // 只在按下时量一次
+      const avail = paneAvail();
       bar.classList.add('on');
       document.body.classList.add('resizing-v');
-      if (bar.setPointerCapture && e.pointerId != null) bar.setPointerCapture(e.pointerId);
       e.preventDefault();
+
+      // 监听挂在 window 上：即使指针飞出分隔条甚至捕获失败，拖动也不会断
+      const move = (ev) => dragPane(key, ev.clientY - y0, base, avail);
+      const up = () => {
+        delete bar.dataset.dragging;
+        bar.classList.remove('on');
+        document.body.classList.remove('resizing-v');
+        savePanes();                                 // 松手才落盘
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
     });
-    bar.addEventListener('pointermove', (e) => {
-      if (!dragging) return;
-      dragPane(key, e.clientY - y0, base, avail);      // 拖动中只改样式，松手才落盘
-    });
-    const end = (e) => {
-      if (!dragging) return;
-      dragging = false;
-      bar.classList.remove('on');
-      document.body.classList.remove('resizing-v');
-      savePanes();
-      if (bar.hasPointerCapture && e.pointerId != null && bar.hasPointerCapture(e.pointerId)) {
-        bar.releasePointerCapture(e.pointerId);
-      }
-    };
-    bar.addEventListener('pointerup', end);
-    bar.addEventListener('pointercancel', end);
-    // 双击复位该分隔条两侧的高度
+
+    // 双击复位全部分区
     bar.addEventListener('dblclick', () => {
-      if (key === 'root') { setPaneH('root', PANE_DEF.root); setPaneH('genre', PANE_DEF.genre); }
-      else setPaneH('genre', PANE_DEF.genre);
+      PANE_ORDER.forEach((p) => setPaneH(p, PANE_DEF[p]));
       clampPanes(); savePanes();
       toast('分区高度已复位', 'ok');
     });
@@ -2396,6 +2431,12 @@ window.addEventListener('resize', clampPanes);
 // 首次布局完成后再夹一次（恢复的高度可能超出当前窗口）
 if (document.readyState === 'complete') clampPanes();
 else window.addEventListener('load', clampPanes);
+// 「媒体分类」列表是拿到媒体库后才渲染的，晚于上面的 load；
+// 它长高会挤走三区的空间，所以盯着它的尺寸变化重新夹一次
+if (window.ResizeObserver) {
+  const nav = $('#nav');
+  if (nav) new ResizeObserver(() => clampPanes()).observe(nav);
+}
 
 /* ── 键盘快捷键 ── */
 document.addEventListener('keydown', (e) => {
