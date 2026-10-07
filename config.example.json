@@ -25,6 +25,7 @@
     "node_modules",
     ".git",
     ".workbuddy",
+    ".transcode-cache",
     "$RECYCLE.BIN",
     "System Volume Information",
     "Program Files",
@@ -35,6 +36,28 @@
 
   "//minSizeKB": "小于该体积的文件视为音效 / 资源，不计入媒体库（0 = 不过滤）。",
   "minSizeKB": 30,
+
+  "//transcode": "═══ 浏览器兼容化（可选）═══ 浏览器只认「编码」，不认扩展名：AVI / MKV / RMVB 这类容器里的视频常常解不了，而 MPEG-4 Part 2（DivX / Xvid）更是任何浏览器都不支持。开启后，点开这类视频会先在本机用 ffmpeg 转成 MP4（编码本来兼容的只换容器，秒级且无损），之后就能在浏览器里直接播。没装 ffmpeg 时这项自动失效，视频仍交给系统播放器。",
+  "//transcodeEnabled": "是否启用。true / false。",
+  "transcodeEnabled": true,
+
+  "//ffmpegPath": "ffmpeg 可执行文件路径。留空 = 用系统 PATH 里的 ffmpeg。装了 ffmpeg 但提示不可用时，在这里填绝对路径，如 \"C:/ffmpeg/bin/ffmpeg.exe\"。",
+  "ffmpegPath": "",
+
+  "//ffprobePath": "ffprobe 路径。留空 = 用 PATH 里的 ffprobe（通常与 ffmpeg 同目录）。",
+  "ffprobePath": "",
+
+  "//transcodeCacheDir": "转换产物存放目录。留空 = 播放器目录下的 .transcode-cache（该目录不会参与扫描）。",
+  "transcodeCacheDir": "",
+
+  "//transcodeCacheMaxGB": "转换缓存体积上限（GB）。超出后按「最久未使用」自动清理。0 表示不限制。",
+  "transcodeCacheMaxGB": 4,
+
+  "//transcodePreset": "ffmpeg 编码预设。越快越省时间、同码率画质略低：ultrafast / superfast / veryfast / faster / fast / medium。机器较慢可调到 ultrafast。",
+  "transcodePreset": "veryfast",
+
+  "//transcodeCrf": "转码画质（crf）。数字越小越清晰、文件越大，常用 18–26。21 接近视觉无损。",
+  "transcodeCrf": 21,
 
   "//tags": "智能标签规则。name=标签名，keywords=命中的关键词（匹配路径或文件名，不区分大小写）。",
   "tags": [

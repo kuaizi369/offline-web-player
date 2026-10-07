@@ -7,6 +7,7 @@ config.json
 
 # ── 运行时缓存（可再生，不入库） ─────────────────────────
 genre-cache.json
+.transcode-cache/
 
 # ── 临时产物 / 调试截图 ─────────────────────────────────
 ScreenShot_*.png

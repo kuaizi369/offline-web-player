@@ -23,7 +23,7 @@ const EXAMPLE_CONFIG_PATH = path.join(APP_DIR, 'config.example.json');
 /* ────────────────────────────  应用信息  ────────────────────────────
    版本号与仓库地址的唯一来源：页面上「关于」区块从这里取，改版本只改这里。 */
 const APP_NAME = '离线音乐与视频播放器';
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.4.0';
 const APP_REPO = 'https://github.com/kuaizi369/offline-web-player';
 const APP_AUTHOR = '筷子';
 
@@ -34,9 +34,20 @@ const DEFAULT_CONFIG = {
   autoOpenBrowser: true,
   scanOnStart: true,
   roots: [],
-  excludeDirs: ['node_modules', '.git', '.workbuddy', '$RECYCLE.BIN', 'System Volume Information'],
+  excludeDirs: ['node_modules', '.git', '.workbuddy', '.transcode-cache', '$RECYCLE.BIN', 'System Volume Information'],
   minSizeKB: 30,
-  tags: []
+  tags: [],
+
+  /* ── 浏览器兼容化（可选能力，需要本机有 ffmpeg）──
+     浏览器解不了的视频（AVI / MKV / RMVB 等）会被转成 MP4，就能在浏览器里直接播。
+     没有装 ffmpeg 时这项自动失效，页面退回「交给系统播放器」，不影响其它功能。 */
+  transcodeEnabled: true,
+  ffmpegPath: '',            // 留空 = 用 PATH 里的 ffmpeg，可填绝对路径
+  ffprobePath: '',           // 留空 = 用 PATH 里的 ffprobe
+  transcodeCacheDir: '',     // 留空 = 播放器目录下的 .transcode-cache
+  transcodeCacheMaxGB: 4,    // 转换缓存上限，超出后按最久未使用清理
+  transcodePreset: 'veryfast',
+  transcodeCrf: 21
 };
 
 let CONFIG_FILE_OK = false;
@@ -376,6 +387,8 @@ async function buildLibrary() {
   const t0 = Date.now();
   ensureGenreCache();
   const excludeSet = new Set((CONFIG.excludeDirs || []).map((d) => d.toLowerCase()));
+  // 转换缓存绝不能进媒体库（默认名 .transcode-cache 已因「点开头」被跳过，这条兜自定义路径）
+  if (CACHE_DIR) excludeSet.add(path.basename(CACHE_DIR).toLowerCase());
   const minBytes = Math.max(0, Number(CONFIG.minSizeKB || 0)) * 1024;
 
   const roots = effectiveRoots();
@@ -985,6 +998,276 @@ function findTrack(id) {
   return LIBRARY.tracks.find((t) => t.id === id) || null;
 }
 
+/* ══════════════════  浏览器兼容化（ffmpeg）  ══════════════════
+
+   浏览器能不能播一个视频，取决于「编码」，跟扩展名无关：
+     · MPEG-4 Part 2（DivX / Xvid，ffprobe 报 `mpeg4`）—— 任何浏览器都不支持，
+       换成 MP4 容器也没用（`canPlayType('video/mp4; codecs="mp4v.20.9"')` 返回空）
+     · H.264 / VP9 / AV1 配 AAC / MP3 / Opus —— 只要装进 MP4 容器，浏览器就能播
+
+   所以点开解不了的视频时分两条路，把它变成浏览器能播的 MP4：
+     remux      编码本来就兼容 → 只换容器（-c copy），秒级完成、画质零损失
+     transcode  视频轨转 H.264，音频能 copy 就 copy —— 慢一些，但只转一次
+
+   产物落在 .transcode-cache/，之后 /api/stream 会自动优先提供，命中缓存时秒开。
+   没装 ffmpeg 时整套能力自动关闭，页面退回「交给系统播放器」，不影响别的功能。 */
+
+const FFMPEG_BIN = process.env.FFMPEG_BIN || CONFIG.ffmpegPath || 'ffmpeg';
+const FFPROBE_BIN = process.env.FFPROBE_BIN || CONFIG.ffprobePath || 'ffprobe';
+const CACHE_DIR = CONFIG.transcodeCacheDir
+  ? path.resolve(CONFIG.transcodeCacheDir)
+  : path.join(APP_DIR, '.transcode-cache');
+const CACHE_MAX_BYTES = Math.max(0, Number(CONFIG.transcodeCacheMaxGB) || 0) * 1024 * 1024 * 1024;
+const TRANSCODE_ENABLED = CONFIG.transcodeEnabled !== false;
+const MAX_CONVERT_JOBS = 2;                 // 同时最多转 2 个，避免占满 CPU
+
+/** 浏览器放进 MP4 容器就能解码的编码 */
+const WEB_VIDEO_CODECS = new Set(['h264', 'vp8', 'vp9', 'av1', 'theora']);
+const WEB_AUDIO_CODECS = new Set(['aac', 'mp3', 'opus', 'vorbis']);
+
+const JOBS = new Map();                     // trackId -> { state, progress, mode, message, error }
+const FF = { checked: false, ok: false, version: '' };
+let runningJobs = 0;
+const jobQueue = [];
+
+/** ffmpeg 是否可用（只探测一次） */
+function ffmpegAvailable() {
+  return new Promise((resolve) => {
+    if (FF.checked) return resolve(FF.ok);
+    FF.checked = true;
+    const c = spawn(FFMPEG_BIN, ['-version'], { windowsHide: true });
+    let out = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.on('error', () => { FF.ok = false; resolve(false); });
+    c.on('close', (code) => {
+      FF.ok = code === 0;
+      FF.version = String(out).split('\n')[0].trim() || '';
+      resolve(FF.ok);
+    });
+  });
+}
+
+/** 只读文件头，拿到视频/音频编码与时长 */
+function probeCodecs(abs) {
+  return new Promise((resolve) => {
+    const c = spawn(FFPROBE_BIN, [
+      '-v', 'error',
+      '-show_entries', 'stream=codec_type,codec_name:format=duration',
+      '-of', 'json', abs
+    ], { windowsHide: true });
+    let out = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.on('error', () => resolve(null));
+    c.on('close', (code) => {
+      if (code !== 0) return resolve(null);
+      try {
+        const j = JSON.parse(out);
+        const streams = j.streams || [];
+        const v = streams.find((s) => s.codec_type === 'video');
+        const a = streams.find((s) => s.codec_type === 'audio');
+        resolve({
+          hasVideo: !!v,
+          vcodec: v ? String(v.codec_name || '') : '',
+          acodec: a ? String(a.codec_name || '') : '',
+          duration: Number((j.format && j.format.duration) || 0)
+        });
+      } catch { resolve(null); }
+    });
+  });
+}
+
+/** 转换产物路径。key 里带上 mtime + size：源文件改了会自然重转 */
+function cachePathFor(track, abs) {
+  const key = md5(`${norm(abs)}|${(track && track.mtime) || 0}|${(track && track.size) || 0}`).slice(0, 24);
+  return path.join(CACHE_DIR, key + '.mp4');
+}
+
+function cacheEntries() {
+  let names = [];
+  try { names = fs.readdirSync(CACHE_DIR); } catch { return []; }
+  const list = [];
+  for (const f of names) {
+    if (!f.endsWith('.mp4')) continue;
+    const fp = path.join(CACHE_DIR, f);
+    try {
+      const st = fs.statSync(fp);
+      list.push({ fp, size: st.size, atime: st.atimeMs || st.mtimeMs });
+    } catch { /* 文件刚被删掉，忽略 */ }
+  }
+  return list;
+}
+
+function cacheUsage() {
+  const list = cacheEntries();
+  return { count: list.length, bytes: list.reduce((s, e) => s + e.size, 0) };
+}
+
+/** 超出上限时按最久未使用清理 */
+function evictCache() {
+  if (!CACHE_MAX_BYTES) return;
+  const list = cacheEntries();
+  let total = list.reduce((s, e) => s + e.size, 0);
+  if (total <= CACHE_MAX_BYTES) return;
+  list.sort((a, b) => a.atime - b.atime);
+  for (const e of list) {
+    if (total <= CACHE_MAX_BYTES) break;
+    try { fs.unlinkSync(e.fp); total -= e.size; } catch { /* 占用中，跳过 */ }
+  }
+}
+
+/** 清掉上次异常退出留下的半成品 */
+function cleanupPartials() {
+  try {
+    for (const f of fs.readdirSync(CACHE_DIR)) {
+      if (f.endsWith('.part')) { try { fs.unlinkSync(path.join(CACHE_DIR, f)); } catch { /* 忽略 */ } }
+    }
+  } catch { /* 目录还不存在 */ }
+}
+
+function buildFFmpegArgs(abs, out, probe, mode) {
+  const args = ['-y', '-hide_banner', '-nostdin', '-loglevel', 'error', '-i', abs,
+    '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn'];
+  if (mode === 'remux') {
+    args.push('-c', 'copy');
+  } else {
+    args.push('-c:v', 'libx264',
+      '-preset', String(CONFIG.transcodePreset || 'veryfast'),
+      '-crf', String(Number(CONFIG.transcodeCrf != null ? CONFIG.transcodeCrf : 21)),
+      '-pix_fmt', 'yuv420p');
+    if (!probe.acodec) args.push('-an');
+    else if (WEB_AUDIO_CODECS.has(probe.acodec)) args.push('-c:a', 'copy');
+    else args.push('-c:a', 'aac', '-b:a', '160k');
+  }
+  args.push('-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', '-f', 'mp4', out);
+  return args;
+}
+
+/** 从 ffmpeg 的 stderr 尾部挑一句能看的错误 */
+function shortFFmpegError(tail) {
+  const lines = String(tail || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const hit = lines.reverse().find((l) => /error|invalid|unable|not supported|failed/i.test(l));
+  return hit ? hit.replace(/^\[[^\]]*\]\s*/, '').slice(0, 200) : '';
+}
+
+/** 真正跑一次转换：写到 .part，成功后原子改名，避免半成品被当成缓存命中 */
+function runConvert(item) {
+  const { track, abs, probe, mode } = item;
+  const out = cachePathFor(track, abs);
+  const part = out + '.part';
+  const job = JOBS.get(track.id);
+  if (!job) return Promise.resolve();
+
+  job.state = 'running';
+  job.progress = 0;
+  job.message = mode === 'remux' ? '正在重新封装容器…' : '正在转码为浏览器可播的格式…';
+
+  return new Promise((resolve) => {
+    let tail = '', buf = '';
+    let child;
+    try {
+      child = spawn(FFMPEG_BIN, buildFFmpegArgs(abs, part, probe, mode), { windowsHide: true });
+    } catch (err) {
+      job.state = 'error'; job.error = String(err.message || err); job.message = '转换失败';
+      return resolve();
+    }
+    child.stdout.on('data', (d) => {
+      buf += d;
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        const m = /^out_time=(\d+):(\d+):([\d.]+)/.exec(line.trim());
+        if (m && probe.duration > 0) {
+          const sec = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]);
+          job.progress = Math.max(0, Math.min(99, Math.round((sec / probe.duration) * 100)));
+        }
+      }
+    });
+    child.stderr.on('data', (d) => { tail = (tail + d).slice(-1500); });
+    child.on('error', (err) => {
+      job.state = 'error';
+      job.error = '无法启动 ffmpeg：' + err.message;
+      job.message = '转换失败';
+      resolve();
+    });
+    child.on('close', (code) => {
+      try { if (fs.existsSync(part)) { if (code === 0) fs.renameSync(part, out); else fs.unlinkSync(part); } } catch { /* 忽略 */ }
+      const okFile = code === 0 && fs.existsSync(out) && fs.statSync(out).size > 0;
+      if (okFile) {
+        job.state = 'ready';
+        job.progress = 100;
+        job.message = mode === 'remux' ? '重新封装完成' : '转换完成';
+        try { const now = new Date(); fs.utimesSync(out, now, now); } catch { /* 忽略 */ }
+        evictCache();
+      } else {
+        job.state = 'error';
+        job.error = shortFFmpegError(tail) || `ffmpeg 退出码 ${code}`;
+        job.message = '转换失败';
+        try { if (fs.existsSync(out)) fs.unlinkSync(out); } catch { /* 忽略 */ }
+      }
+      resolve();
+    });
+  });
+}
+
+function pumpJobs() {
+  while (runningJobs < MAX_CONVERT_JOBS && jobQueue.length) {
+    const item = jobQueue.shift();
+    runningJobs++;
+    runConvert(item).finally(() => { runningJobs--; pumpJobs(); });
+  }
+}
+
+/** 当前状态快照（不启动任何动作） */
+function jobSnapshot(track, abs) {
+  const out = cachePathFor(track, abs);
+  const job = JOBS.get(track.id);
+  if (fs.existsSync(out)) {
+    return { state: 'ready', progress: 100, mode: (job && job.mode) || 'cache', message: '' };
+  }
+  if (!TRANSCODE_ENABLED) return { state: 'disabled', progress: 0, message: '转换功能已在 config.json 中关闭' };
+  if (!job) return { state: 'idle', progress: 0, message: '' };
+  return {
+    state: job.state,
+    progress: Math.round(job.progress || 0),
+    mode: job.mode || '',
+    message: job.message || '',
+    error: job.error || ''
+  };
+}
+
+/** 确保某个视频有「浏览器能播的版本」；幂等，重复调用只返回进度 */
+async function ensurePlayable(track, abs) {
+  const out = cachePathFor(track, abs);
+  if (fs.existsSync(out)) return jobSnapshot(track, abs);
+  if (!TRANSCODE_ENABLED) return jobSnapshot(track, abs);
+
+  const existing = JOBS.get(track.id);
+  if (existing && (existing.state === 'running' || existing.state === 'queued')) return jobSnapshot(track, abs);
+  if (existing && existing.state === 'unsupported') return jobSnapshot(track, abs);
+
+  if (!(await ffmpegAvailable())) {
+    JOBS.set(track.id, { state: 'unsupported', progress: 0, message: '本机没有找到 ffmpeg，无法在浏览器中播放' });
+    return jobSnapshot(track, abs);
+  }
+
+  const probe = await probeCodecs(abs);
+  if (!probe || !probe.hasVideo) {
+    JOBS.set(track.id, { state: 'unsupported', progress: 0, message: '读不出这个文件的视频轨' });
+    return jobSnapshot(track, abs);
+  }
+
+  const mode = (WEB_VIDEO_CODECS.has(probe.vcodec) && (!probe.acodec || WEB_AUDIO_CODECS.has(probe.acodec)))
+    ? 'remux' : 'transcode';
+
+  JOBS.set(track.id, {
+    state: 'queued', progress: 0, mode,
+    message: mode === 'remux' ? '正在重新封装容器…' : '正在转码为浏览器可播的格式…'
+  });
+  jobQueue.push({ track, abs, probe, mode });
+  pumpJobs();
+  return jobSnapshot(track, abs);
+}
+
 /**
  * 视频播放页。由首页 window.open('/play?id=xxx') 在新标签页打开。
  *
@@ -1000,6 +1283,10 @@ function playPageHTML(abs, id) {
   const streamURL = abs ? `/api/stream?id=${encodeURIComponent(id)}` : '';
   const missing = !abs;
   const native = missing ? false : !!t && !!t.native;
+  // 已转好的直接秒开（渲染时就查缓存，避免先闪一下进度条）
+  const cached = !missing && !!t && t.kind === 'video' && fs.existsSync(cachePathFor(t, abs));
+  const direct = native || cached;           // 可以直接喂给 <video>
+  const needConvert = !missing && !direct;   // 容器浏览器解不了 → 先转成 MP4，转完自动播
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -1035,6 +1322,18 @@ function playPageHTML(abs, id) {
   .err p{color:var(--muted);font-size:13px;line-height:1.9;max-width:560px}
   .err b{color:var(--text);font-weight:600}
   .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:13px}
+  /* 浏览器解不了这个容器时：先显示转换进度，转完自动换成播放器 */
+  .prep{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+        gap:15px;text-align:center;padding:32px;background:var(--bg)}
+  .prep h2{font-size:16px;font-weight:600}
+  .prep .pmsg{color:var(--text-2);font-size:13px;font-variant-numeric:tabular-nums}
+  .prep .phint{color:var(--muted);font-size:12px;max-width:430px;line-height:1.85}
+  .ring{width:34px;height:34px;border-radius:50%;border:2.5px solid var(--line-strong);
+        border-top-color:var(--accent);animation:sp .8s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .pbar{width:min(360px,70vw);height:4px;border-radius:3px;background:var(--panel);overflow:hidden}
+  .pbar i{display:block;height:100%;width:0;border-radius:3px;
+          background:linear-gradient(90deg,var(--accent),#22D3EE);transition:width .3s}
 </style>
 </head>
 <body>
@@ -1050,13 +1349,21 @@ function playPageHTML(abs, id) {
     </div>
   </div>
   <div class="stage">
-    ${missing || !native ? '' : `<video id="v" controls playsinline autoplay preload="metadata" src="${escapeHTML(streamURL)}"></video>`}
-    <div class="err${missing || !native ? ' on' : ''}" id="err">
+    ${missing ? '' : `<video id="v" controls playsinline autoplay preload="metadata"${direct ? ` src="${escapeHTML(streamURL)}"` : ' style="display:none"'}></video>`}
+    ${needConvert ? `
+    <div class="prep" id="prep">
+      <div class="ring"></div>
+      <h2 id="pTitle">正在准备在浏览器中播放…</h2>
+      <div class="pbar"><i id="pfill"></i></div>
+      <p class="pmsg" id="pmsg">正在分析文件…</p>
+      <p class="phint">这个容器的编码浏览器解不了，需要先转成浏览器能播的 MP4。<br>只转这一次，之后点开就是秒播。</p>
+    </div>` : ''}
+    <div class="err${missing ? ' on' : ''}" id="err">
       <h2>${missing ? '找不到这个文件' : '浏览器无法播放这个文件'}</h2>
       <p>${missing
         ? '它可能已被移动或删除，请在播放器主页面重新扫描后再试。'
-        : `浏览器解不了 <b>.${escapeHTML(String((t && t.ext) || '').toUpperCase())}</b> 这类容器（常见于 MKV / RMVB / AVI / WMV）。
-           点上方 <b>用系统播放器打开</b>，交给本机播放器处理，字幕与多音轨都会正常。`}
+        : `浏览器解不了 <b>.${escapeHTML(String((t && t.ext) || '').toUpperCase())}</b> 这类容器的编码（常见于 MKV / RMVB / AVI / WMV）。
+           <br>点上方 <b>用系统播放器打开</b>，交给本机播放器处理，字幕与多音轨都会正常。`}
       </p>
       <button class="btn primary" id="eSys">用系统播放器打开</button>
     </div>
@@ -1064,8 +1371,11 @@ function playPageHTML(abs, id) {
 <script>
 (function () {
   var ID = ${JSON.stringify(id || '')};
+  var HAS_SRC = ${direct ? 'true' : 'false'};
+  var MISSING = ${missing ? 'true' : 'false'};
   var v = document.getElementById('v');
   var err = document.getElementById('err');
+  var prep = document.getElementById('prep');
 
   function post(path, done) {
     fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1083,12 +1393,57 @@ function playPageHTML(abs, id) {
   document.getElementById('bClose').onclick = closeTab;
   document.getElementById('eSys').onclick = sys;
 
-  if (v) {
-    // 自动播放可能被浏览器策略拦下（新标签页仍算用户手势发起，通常放行）；
-    // 万一被拦，原生控件就在下面，点一下即可，不做多余打扰。
+  function playIt() {
+    if (!v) return;
     v.addEventListener('error', function () { err.classList.add('on'); });
-    var p = v.play();
-    if (p && p.catch) p.catch(function () {});
+    // 自动播放可能被浏览器策略拦下，万一被拦原生控件就在下面，点一下即可
+    var pr = v.play();
+    if (pr && pr.catch) pr.catch(function () {});
+  }
+
+  function showError(title, text) {
+    if (prep) prep.style.display = 'none';
+    var h = err.querySelector('h2'), p = err.querySelector('p');
+    if (title && h) h.textContent = title;
+    if (text && p) p.textContent = text;
+    err.classList.add('on');
+  }
+
+  function mount() {
+    if (!v) return;
+    v.style.display = '';
+    v.src = '/api/stream?id=' + encodeURIComponent(ID);
+    if (prep) prep.style.display = 'none';
+    playIt();
+  }
+
+  if (HAS_SRC) {
+    playIt();
+  } else if (!MISSING) {
+    // 浏览器解不了这个容器：请服务端准备一个能播的版本，边转边报进度，好了自动换播放器
+    var fails = 0;
+    var poll = function () {
+      post('/api/convert', function (j) {
+        if (!j || !j.state) {
+          if (++fails > 6) return showError('无法连接本地服务', '请确认播放器服务仍在运行，然后刷新本页。');
+          return setTimeout(poll, 800);
+        }
+        fails = 0;
+        if (j.state === 'ready') return mount();
+        if (j.state === 'unsupported' || j.state === 'disabled' || j.state === 'missing') {
+          return showError('浏览器无法播放这个文件', (j.message || '') + ' 点上方「用系统播放器打开」即可正常观看。');
+        }
+        if (j.state === 'error') {
+          return showError('转换失败', (j.error || '') + ' 点上方「用系统播放器打开」即可正常观看。');
+        }
+        var pct = typeof j.progress === 'number' ? j.progress : 0;
+        var fill = document.getElementById('pfill'), msg = document.getElementById('pmsg');
+        if (fill) fill.style.width = pct + '%';
+        if (msg) msg.textContent = (j.message || '正在准备…') + ' ' + pct + '%';
+        setTimeout(poll, 700);
+      });
+    };
+    poll();
   }
 
   document.addEventListener('keydown', function (e) {
@@ -1317,15 +1672,60 @@ const server = http.createServer(async (req, res) => {
         usingDefaultRoots: usingDefaultRoots(),
         rootCount: effectiveRoots().length,
         systemPlayer: sp && fs.existsSync(sp) ? path.basename(sp) : '系统默认关联程序',
+        transcode: TRANSCODE_ENABLED && FF.ok,     // 能否把浏览器解不了的视频转成可播格式
         lastScan
       });
     }
 
-    /* ---- 媒体流 ---- */
+    /* ---- 媒体流（视频若已转好浏览器兼容版本，则优先给转换产物） ---- */
     if (p === '/api/stream') {
-      const abs = resolveMediaPath(u.searchParams.get('id'));
+      const id = u.searchParams.get('id');
+      const abs = resolveMediaPath(id);
       if (!abs) { res.writeHead(404); return res.end('媒体不存在或不在媒体库范围内'); }
+      const track = findTrack(id);
+      if (track && track.kind === 'video') {
+        const cached = cachePathFor(track, abs);
+        if (fs.existsSync(cached)) return streamMedia(req, res, cached);
+      }
       return streamMedia(req, res, abs);
+    }
+
+    /* ---- 让视频变成「浏览器能播的版本」（幂等：重复调用返回当前进度） ---- */
+    if (p === '/api/convert') {
+      const body = req.method === 'POST' ? await readBody(req) : {};
+      const id = String(body.id || u.searchParams.get('id') || '');
+      const abs = resolveMediaPath(id);
+      const track = findTrack(id);
+      if (!abs || !track) {
+        return sendJSON(res, 404, { ok: false, state: 'missing', progress: 0, message: '媒体不存在或不在媒体库范围内' });
+      }
+      if (req.method === 'GET') return sendJSON(res, 200, Object.assign({ ok: true }, jobSnapshot(track, abs)));
+      const snap = await ensurePlayable(track, abs);
+      return sendJSON(res, 200, Object.assign({ ok: true }, snap));
+    }
+
+    /* ---- 转换缓存占用 / 清理 ---- */
+    if (p === '/api/cache') {
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        if (body.action === 'clear') {
+          let removed = 0;
+          for (const e of cacheEntries()) { try { fs.unlinkSync(e.fp); removed++; } catch { /* 占用中 */ } }
+          JOBS.clear();
+          return sendJSON(res, 200, { ok: true, removed });
+        }
+      }
+      const use = cacheUsage();
+      return sendJSON(res, 200, {
+        ok: true,
+        enabled: TRANSCODE_ENABLED,
+        count: use.count,
+        bytes: use.bytes,
+        sizeText: humanSize(use.bytes),
+        limitGB: CACHE_MAX_BYTES / 1024 / 1024 / 1024,
+        dir: CACHE_DIR,
+        ffmpeg: FF.ok
+      });
     }
 
     /* ---- 用系统默认播放器打开 ---- */
@@ -1484,6 +1884,9 @@ function banner() {
   }
   console.log(`  扫描范围 ${effectiveRoots().length} 个目录` +
     (usingDefaultRoots() ? '（默认：播放器所在目录）' : ''));
+  console.log('  转换     ' + (TRANSCODE_ENABLED && FF.ok
+    ? '可用（浏览器解不了的视频会自动转成 MP4）'
+    : '不可用（未找到 ffmpeg，解不了的视频仍交给系统播放器）'));
   console.log(line);
   console.log(`  访问地址  http://${HOST}:${PORT}`);
   console.log('  停止服务  在此窗口按 Ctrl + C');
@@ -1523,7 +1926,9 @@ server.on('error', async (err) => {
   process.exit(1);
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, async () => {
+  try { fs.mkdirSync(CACHE_DIR, { recursive: true }); cleanupPartials(); } catch { /* 目录不可用时转换功能自然失效 */ }
+  await ffmpegAvailable();      // 启动时探测一次，横幅与 /api/ping 才报得准
   banner();
   const noOpen = process.env.PLAYER_NO_OPEN === '1';
   if (CONFIG.autoOpenBrowser !== false && !noOpen) openBrowser(`http://${HOST}:${PORT}`);

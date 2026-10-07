@@ -837,7 +837,8 @@ const S = {
   volume: Number(localStorage.getItem('pv.vol') ?? 1),
   rate: 1,
   page: 0,            // 列表分页渲染游标
-  filtered: []
+  filtered: [],
+  transcode: false    // 服务端能否把浏览器解不了的视频转成可播格式（/api/ping 下发）
 };
 
 const audio = $('#audio');
@@ -978,6 +979,7 @@ async function boot() {
     if (!r.ok) throw new Error('no service');
     const info = await r.json();
     serviceMode = true;
+    S.transcode = !!info.transcode;           // 有 ffmpeg 时，解不了的视频会在浏览器里自动转换后播放
     applyAppInfo(info);                       // 侧栏「关于」：作者 / 版本 / 仓库
     if (info.systemPlayer) {
       sysPlayerName = info.systemPlayer;
@@ -1317,7 +1319,9 @@ function appendChunk() {
           : esc(t.title)}
         ${t.kind === 'video' ? '<span class="tg">视频</span>' : ''}
         ${t.genre && GENRE_NAME[t.genre] ? `<span class="tg gtag" title="曲风">${esc(GENRE_NAME[t.genre])}</span>` : ''}
-        ${!t.native ? '<span class="tg" style="color:#FFB26B">需系统播放器</span>' : ''}
+        ${!t.native ? (S.transcode
+            ? '<span class="tg" style="color:#22D3EE" title="这个容器的编码浏览器解不了，点开时会在浏览器里先转成 MP4">转换后可播</span>'
+            : '<span class="tg" style="color:#FFB26B" title="浏览器解不了，需要用系统播放器打开">需系统播放器</span>') : ''}
         ${t.tags.slice(0, 2).map((g) => `<span class="tg">${esc(g)}</span>`).join('')}
       </td>
       <td class="art" title="${esc(t.artist || '未知')}">${esc(t.artist || '—')}</td>
