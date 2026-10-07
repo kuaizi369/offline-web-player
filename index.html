@@ -24,6 +24,7 @@
   --bar-h:88px;
   --r-s:8px; --r-m:12px; --r-l:18px;
   --ease:cubic-bezier(.32,.72,0,1);
+  --side-w:264px;   /* 侧栏宽度，可拖拽右侧边缘调整，双击复位 */
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
@@ -44,14 +45,30 @@ input,select{font:inherit;color:inherit}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.20);background-clip:content-box}
 
 /* ══════════════════════════  骨架  ══════════════════════════ */
-.app{display:grid;grid-template-columns:264px 1fr;height:100vh}
+.app{display:grid;grid-template-columns:var(--side-w) 1fr;height:100vh}
+/* 拖动中：禁掉全局文本选中与 hover 抖动 */
+body.resizing{cursor:col-resize!important;user-select:none}
+body.resizing *{cursor:col-resize!important;pointer-events:none}
+body.resizing .side-grip{pointer-events:auto}
 
 /* ── 侧栏 ── */
 .side{
   background:var(--panel);
   border-right:1px solid var(--line);
   display:flex;flex-direction:column;min-height:0;
+  position:relative;
 }
+/* 侧栏宽度拖动手柄 */
+.side-grip{
+  position:absolute;top:0;right:-3px;bottom:0;width:7px;z-index:12;
+  cursor:col-resize;background:transparent;transition:background .15s;
+}
+.side-grip::after{
+  content:"";position:absolute;top:0;bottom:0;left:3px;width:1px;
+  background:var(--accent);opacity:0;transition:opacity .15s;
+}
+.side-grip:hover::after,.side-grip.on::after{opacity:.85}
+.side-grip.on::after{width:2px;left:2px}
 .brand{padding:20px 18px 16px;display:flex;align-items:center;gap:11px;flex:none}
 .brand-mark{
   width:34px;height:34px;border-radius:10px;flex:none;
@@ -336,6 +353,10 @@ input,select{font:inherit;color:inherit}
 .gnbtn{font-size:10.5px;padding:2px 9px;border-radius:20px;border:1px solid var(--line-strong);background:var(--panel-2);color:var(--text-2);cursor:pointer;transition:.15s;font-family:inherit}
 .gnbtn:hover:not(:disabled){color:var(--text);border-color:var(--accent)}
 .gnbtn:disabled{opacity:.55;cursor:default}
+/* 分组标题行：标题 + 右侧并列的操作按钮 */
+.lbl-row{display:flex;align-items:center;gap:8px;min-width:0}
+.lbl-row>.lbl-acts{display:flex;align-items:center;gap:5px;margin-left:auto;flex:none}
+.lbl-row .gnbtn{white-space:nowrap}
 /* 曲风徽标（区别于普通标签的紫色调） */
 .ttl .tg.gtag{background:rgba(124,92,255,.16);color:#B7A6FF}
 /* 删除按钮悬停警示色 */
@@ -417,6 +438,31 @@ input,select{font:inherit;color:inherit}
 }
 .dir-note b{color:var(--text-2);font-weight:500}
 .dir-note.warn{border-left-color:var(--warm)}
+/* 目录选择器里的「当前扫描范围」——可在这里直接移除目录 */
+.dir-cur{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-s);padding:8px}
+.dir-cur .dc-hd{
+  font-size:11px;color:var(--muted);letter-spacing:.4px;font-weight:500;
+  padding:1px 5px 6px;display:flex;align-items:center;justify-content:space-between;
+}
+.dir-cur .dc-hd em{font-style:normal;font-variant-numeric:tabular-nums}
+.dc-row{
+  display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:7px;
+  color:var(--text-2);font-size:12.5px;transition:background .12s;
+}
+.dc-row:hover{background:var(--panel-3)}
+.dc-row .dn{flex:1;min-width:0}
+.dc-row .dn b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc-row .dn span{display:block;font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dc-row .cnt{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+.dc-row .drm{
+  flex:none;font-size:10.5px;padding:2px 8px;border-radius:6px;
+  border:1px solid var(--line-strong);color:var(--text-2);transition:.15s;
+}
+.dc-row .drm:hover{border-color:#E5484D;background:#E5484D;color:#fff}
+.dc-row.def .drm{opacity:.45}
+.dc-empty{padding:4px 6px 2px;color:var(--muted);font-size:11.5px;line-height:1.7}
+.btn.danger{background:#E5484D;border-color:#E5484D;color:#fff}
+.btn.danger:hover{background:#F0575B;color:#fff}
 
 /* ══════════════════════════  提示 / 遮罩  ══════════════════════════ */
 .toasts{position:fixed;bottom:calc(var(--bar-h) + 16px);left:50%;transform:translateX(-50%);z-index:80;
@@ -475,9 +521,12 @@ input,select{font:inherit;color:inherit}
 
     <nav class="nav" id="nav"></nav>
 
-    <div class="nav-label" style="padding:16px 10px 6px;display:flex;align-items:center;justify-content:space-between">
+    <div class="nav-label lbl-row" style="padding:16px 10px 6px">
       <span>扫描目录</span>
-      <button class="gnbtn" id="rootAdd" title="选择要扫描的目录（只扫描你添加的目录，不做全盘扫描）">＋ 添加目录</button>
+      <span class="lbl-acts">
+        <button class="gnbtn" id="rescan" title="重新扫描已添加的目录"><span id="rescanLabel">↻ 重新扫描</span></button>
+        <button class="gnbtn" id="rootAdd" title="选择要扫描的目录（只扫描你添加的目录，不做全盘扫描）">＋ 添加目录</button>
+      </span>
     </div>
     <div class="rlist" id="rootNav"></div>
     <div class="rlist-foot">
@@ -492,6 +541,8 @@ input,select{font:inherit;color:inherit}
 
     <div class="nav-label" style="padding:16px 20px 6px">专辑 / 文件夹</div>
     <div class="album-scroll" id="albumNav"></div>
+
+    <div class="side-grip" id="sideGrip" title="左右拖动调整宽度 · 双击恢复默认"></div>
   </aside>
 
   <!-- ══════ 主区 ══════ -->
@@ -526,12 +577,6 @@ input,select{font:inherit;color:inherit}
         <option value="time">按修改时间排序</option>
       </select>
 
-      <button class="btn" id="rescan" title="重新扫描已添加的目录">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>
-        </svg>
-        <span id="rescanLabel">重新扫描</span>
-      </button>
     </header>
 
     <div class="content" id="content"></div>
@@ -694,6 +739,11 @@ input,select{font:inherit;color:inherit}
 
     <div class="dir-note">
       播放器只会扫描<b>你在这里添加的目录</b>（含子目录），不会全盘扫描。未添加任何目录时，默认只扫描播放器所在的这个文件夹。
+    </div>
+
+    <div class="dir-cur">
+      <div class="dc-hd"><span>当前扫描范围</span><em id="dirCurCnt"></em></div>
+      <div id="dirCurList"></div>
     </div>
 
     <div class="dir-wrap">
@@ -1741,20 +1791,20 @@ $('#rescan').onclick = async () => {
   const label = $('#rescanLabel');
   if (btn.disabled) return;
   btn.disabled = true;
-  btn.style.opacity = '.65';
-  const orig = '重新扫描';
+  $('#rootAdd').disabled = true;
+  const orig = '↻ 重新扫描';
   try {
-    const st = await scanWithProgress(label, '扫描中 ·');
+    const st = await scanWithProgress(label, '⟳');
     if (st.error) { toast('扫描出错：' + st.error, 'err'); return; }
     const lib = await reloadLibrary();
     toast(`扫描完成 · ${lib.stats.total} 个文件（${(st.scanMs / 1000).toFixed(1)}s）`, 'ok');
   } catch (e) { toast('扫描失败：' + e.message, 'err'); }
   label.textContent = orig;
   btn.disabled = false;
-  btn.style.opacity = '';
+  $('#rootAdd').disabled = false;
 };
 
-/** 从扫描范围移除一个目录 */
+/** 从扫描范围移除一个目录（侧栏 ✕ 与目录选择器里的「移除」共用） */
 async function askRemoveRoot(rootPath) {
   if (!confirm(`把这个目录移出扫描范围？\n\n${rootPath}\n\n只影响播放器的索引，磁盘上的文件不会被删除。`)) return;
   try {
@@ -1766,10 +1816,53 @@ async function askRemoveRoot(rootPath) {
     if (!j.ok) { toast(j.error || '移除失败', 'err'); return; }
     await waitScanDone();
     const lib = await reloadLibrary();
+    // 若目录选择器正开着，同步刷新里面的清单与「已添加」标记
+    if ($('#dirModal').classList.contains('open')) {
+      renderDirCur();
+      if (DIR.path) browse(DIR.path);
+    }
     toast(j.emptied
       ? `已移除 · 现在没有配置任何目录，恢复为只扫描播放器所在目录（${lib.stats.total} 个文件）`
       : `已移出扫描范围 · 现有 ${lib.stats.total} 个文件`, 'ok');
   } catch (e) { toast('移除失败：' + e.message, 'err'); }
+}
+
+/** 目录选择器里「当前扫描范围」清单 */
+async function renderDirCur() {
+  const box = $('#dirCurList');
+  box.innerHTML = `<div class="dc-empty">读取中…</div>`;
+  let j;
+  try {
+    j = await (await fetch('/api/roots', { cache: 'no-store' })).json();
+  } catch (e) {
+    box.innerHTML = `<div class="dc-empty">读取失败：${esc(e.message)}</div>`;
+    return;
+  }
+  const list = (j && j.roots) || [];
+  $('#dirCurCnt').textContent = list.length ? `${list.length} 个` : '默认';
+  if (!list.length) {
+    box.innerHTML = `<div class="dc-empty">未添加任何目录 —— 当前只扫描播放器所在目录。</div>`;
+    return;
+  }
+  box.innerHTML = list.map((r) => `
+    <div class="dc-row ${r.isDefault ? 'def' : ''}" title="${esc(r.path)}">
+      <span class="dn">
+        <b>${esc(r.label)}</b>
+        <span>${r.exists ? esc(r.path) : '⚠ 目录不存在（已跳过）'}</span>
+      </span>
+      <span class="cnt">${r.files ?? 0}</span>
+      <button class="drm" data-del="${esc(r.path)}"
+        title="${r.isDefault ? '默认范围（播放器所在目录）不单独移除；想只留下它，请用侧栏「↺ 恢复默认」' : '移出扫描范围'}">
+        ${r.isDefault ? '默认' : '－ 移除'}
+      </button>
+    </div>`).join('');
+  $$('#dirCurList .drm').forEach((b) => b.onclick = () => {
+    if (b.closest('.dc-row').classList.contains('def')) {
+      toast('默认范围不单独移除 · 想只留下它，请点侧栏「↺ 恢复默认」', 'err');
+      return;
+    }
+    askRemoveRoot(b.dataset.del);
+  });
 }
 
 /** 清空全部扫描目录，回到「仅扫描播放器所在目录」 */
@@ -1781,12 +1874,16 @@ $('#rootReset').onclick = async () => {
     if (!j.ok) { toast(j.error || '操作失败', 'err'); return; }
     await waitScanDone();
     const lib = await reloadLibrary();
+    if ($('#dirModal').classList.contains('open')) {
+      renderDirCur();
+      if (DIR.path) browse(DIR.path);
+    }
     toast(`已恢复默认扫描范围 · ${lib.stats.total} 个文件`, 'ok');
   } catch (e) { toast('操作失败：' + e.message, 'err'); }
 };
 
 /* ── 目录选择器 ── */
-const DIR = { path: '', parent: null, depth: 0 };
+const DIR = { path: '', parent: null, depth: 0, added: false };
 
 function dirCrumbHtml(p, extra) {
   if (!p) return `磁盘列表${extra ? ` · ${esc(extra)}` : ''}`;
@@ -1828,7 +1925,9 @@ function renderDirList(j) {
           <svg class="di" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
           <span class="dn">${esc(d.name)}</span>
           ${d.isSystem ? '<span class="dtag">系统目录</span>' : ''}
-          ${d.added ? '<span class="dtag">已在扫描范围</span>' : '<span class="dadd" data-add="' + esc(d.path) + '">＋ 添加</span>'}
+          ${d.added
+            ? '<span class="dtag">已添加</span><span class="drm" data-del="' + esc(d.path) + '">－ 移除</span>'
+            : '<span class="dadd" data-add="' + esc(d.path) + '">＋ 添加</span>'}
         </button>`).join(''));
     }
   }
@@ -1836,8 +1935,9 @@ function renderDirList(j) {
 
   $$('#dirList .dir-row').forEach((r) => {
     r.onclick = (e) => {
-      const addPath = e.target && e.target.dataset ? e.target.dataset.add : null;
-      if (addPath) { e.stopPropagation(); doAddRoot(addPath); return; }
+      const ds = (e.target && e.target.dataset) || {};
+      if (ds.add) { e.stopPropagation(); doAddRoot(ds.add); return; }
+      if (ds.del) { e.stopPropagation(); askRemoveRoot(ds.del); return; }
       const go = r.dataset.go;
       if (go !== undefined) browse(go);
     };
@@ -1853,6 +1953,8 @@ async function browse(p) {
       // 跟输入框里显示的完全不同的目录（用户看到 A、实际加的是 B）
       DIR.path = '';
       DIR.parent = null;
+      DIR.added = false;
+      syncDirPick();
       toast(j.error || '无法打开该目录', 'err');
       $('#dirList').innerHTML = `<div class="dir-empty">${esc(j.error || '无法打开该目录')}<br>可以用「↑ 上级」回到可访问的位置。</div>`;
       $('#dirCrumb').innerHTML = dirCrumbHtml('', '路径无效');
@@ -1860,7 +1962,9 @@ async function browse(p) {
     }
     DIR.path = j.path;
     DIR.parent = j.parent;
+    DIR.added = !!j.added;
     $('#dirPath').value = j.path || '';
+    syncDirPick();
     const sig = j.path ? (j.isDriveRoot ? '整个磁盘' : `可用 ${j.freeText || '—'}`) : '选择磁盘';
     $('#dirCrumb').innerHTML = dirCrumbHtml(j.path, sig);
     if (j.isSystem) toast('这是系统目录，扫描它会很慢，一般不需要', 'err');
@@ -1874,7 +1978,23 @@ async function browse(p) {
   } catch (e) {
     DIR.path = '';
     DIR.parent = null;
+    DIR.added = false;
+    syncDirPick();
     $('#dirList').innerHTML = `<div class="dir-empty">读取失败：${esc(e.message)}</div>`;
+  }
+}
+
+/** 底部主按钮：当前目录已添加 → 变成「移出扫描范围」，反之是「添加当前目录」 */
+function syncDirPick() {
+  const b = $('#dirPick');
+  if (DIR.added) {
+    b.textContent = '－ 移出扫描范围';
+    b.classList.remove('primary');
+    b.classList.add('danger');
+  } else {
+    b.textContent = '添加当前目录';
+    b.classList.add('primary');
+    b.classList.remove('danger');
   }
 }
 
@@ -1924,6 +2044,7 @@ $('#rootAdd').onclick = () => {
   DIR.autoLabel = true;
   $('#dirLabel').value = '';
   $('#dirModal').classList.add('open');
+  renderDirCur();
   browse('');
 };
 $('#dirClose').onclick = () => $('#dirModal').classList.remove('open');
@@ -1949,8 +2070,9 @@ $('#dirPath').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#di
 $('#dirLabel').addEventListener('input', () => { DIR.autoLabel = false; });
 $('#dirUp').onclick = () => browse(DIR.parent === null ? '' : DIR.parent);
 $('#dirPick').onclick = () => {
-  if (!DIR.path) { toast('先进入一个具体的文件夹，或用「add」按钮选择磁盘下的目录', 'err'); return; }
-  doAddRoot(DIR.path, false);
+  if (!DIR.path) { toast('先进入一个具体的文件夹，或用列表里的「＋ 添加」按钮', 'err'); return; }
+  if (DIR.added) askRemoveRoot(DIR.path);
+  else doAddRoot(DIR.path, false);
 };
 
 /* ══════════════════  联网补全曲风  ══════════════════ */
@@ -2085,6 +2207,52 @@ $('#mVidClose').onclick = () => { video.pause(); $('#modal').classList.remove('o
 $('#modal').addEventListener('click', (e) => {
   if (e.target.id === 'modal') { video.pause(); $('#modal').classList.remove('open'); }
 });
+
+/* ══════════════════  侧栏宽度拖拽  ══════════════════ */
+const SIDE_MIN = 200, SIDE_MAX = 560, SIDE_DEF = 264;
+
+function setSideW(px, persist) {
+  const w = Math.min(SIDE_MAX, Math.max(SIDE_MIN, Math.round(px)));
+  document.documentElement.style.setProperty('--side-w', w + 'px');
+  if (persist) localStorage.setItem('pv.sideW', String(w));
+}
+// 恢复上次宽度（越界值直接夹到合法区间）
+(function restoreSideW() {
+  const saved = Number(localStorage.getItem('pv.sideW'));
+  if (saved) setSideW(saved, false);
+})();
+
+(() => {
+  const grip = $('#sideGrip');
+  let dragging = false;
+
+  grip.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    grip.classList.add('on');
+    document.body.classList.add('resizing');
+    if (grip.setPointerCapture && e.pointerId != null) grip.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    setSideW(e.clientX, false);          // 拖动中只改样式，松手才落盘
+  });
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    grip.classList.remove('on');
+    document.body.classList.remove('resizing');
+    setSideW(e.clientX, true);
+    if (grip.hasPointerCapture && e.pointerId != null && grip.hasPointerCapture(e.pointerId)) {
+      grip.releasePointerCapture(e.pointerId);
+    }
+  };
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+  // 双击复位
+  grip.addEventListener('dblclick', () => { setSideW(SIDE_DEF, true); toast('侧栏宽度已复位', 'ok'); });
+})();
 
 /* ── 键盘快捷键 ── */
 document.addEventListener('keydown', (e) => {
