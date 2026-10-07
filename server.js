@@ -23,7 +23,7 @@ const EXAMPLE_CONFIG_PATH = path.join(APP_DIR, 'config.example.json');
 /* ────────────────────────────  应用信息  ────────────────────────────
    版本号与仓库地址的唯一来源：页面上「关于」区块从这里取，改版本只改这里。 */
 const APP_NAME = '离线音乐与视频播放器';
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.3.0';
 const APP_REPO = 'https://github.com/kuaizi369/offline-web-player';
 const APP_AUTHOR = '筷子';
 
@@ -961,6 +961,145 @@ function readBody(req) {
   });
 }
 
+function sendHTML(res, code, html) {
+  const body = Buffer.from(html, 'utf8');
+  res.writeHead(code, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store'
+  });
+  res.end(body);
+}
+
+/* ────────────────────────────  独立视频播放页  ──────────────────────────── */
+
+function escapeHTML(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+/** 按 id 在索引里反查曲目（索引未就绪时返回 null，页面退回文件名） */
+function findTrack(id) {
+  if (!LIBRARY || !id) return null;
+  return LIBRARY.tracks.find((t) => t.id === id) || null;
+}
+
+/**
+ * 视频播放页。由首页 window.open('/play?id=xxx') 在新标签页打开。
+ *
+ * 为什么不复用首页的弹层：独立成一页才能拿到浏览器原生播放器的全部能力
+ * —— 全屏、画中画、键盘快捷键、系统音量、投屏，且不会被首页的滚动/快捷键抢事件。
+ */
+function playPageHTML(abs, id) {
+  const t = abs ? findTrack(id) : null;
+  const title = t ? t.title : (abs ? path.basename(abs) : '视频');
+  const sub = t
+    ? [t.artist || '', `.${String(t.ext || '').toUpperCase()}`, t.album, t.sizeText].filter(Boolean).join(' · ')
+    : '';
+  const streamURL = abs ? `/api/stream?id=${encodeURIComponent(id)}` : '';
+  const missing = !abs;
+  const native = missing ? false : !!t && !!t.native;
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHTML(title)}</title>
+<style>
+  :root{--bg:#0B0D11;--panel:#11141A;--line:rgba(255,255,255,.075);--line-strong:rgba(255,255,255,.14);
+        --text:#E9ECF3;--text-2:#A6AEC0;--muted:#6C7488;--accent:#7C5CFF;--warm:#FFB26B}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);display:flex;flex-direction:column;overflow:hidden;
+       font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;font-size:14px}
+  .bar{display:flex;align-items:center;gap:16px;padding:10px 16px;background:var(--panel);
+       border-bottom:1px solid var(--line);flex:none}
+  .meta{min-width:0;flex:1}
+  .ttl{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .acts{display:flex;gap:8px;flex:none}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:8px;
+       border:1px solid var(--line-strong);background:var(--panel);color:var(--text-2);
+       font-size:12.5px;cursor:pointer;transition:background .16s,color .16s,border-color .16s}
+  .btn:hover{background:#1E232D;color:var(--text)}
+  .btn.primary{border-color:transparent;background:var(--accent);color:#fff}
+  .btn.primary:hover{background:#8A6DFF}
+  .stage{position:relative;flex:1;min-height:0;display:flex}
+  video{width:100%;height:100%;object-fit:contain;background:#000;outline:none}
+  .err{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+       gap:14px;text-align:center;padding:32px;background:var(--bg)}
+  .err.on{display:flex}
+  .err h2{font-size:17px;font-weight:600}
+  .err p{color:var(--muted);font-size:13px;line-height:1.9;max-width:560px}
+  .err b{color:var(--text);font-weight:600}
+  .hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="meta">
+      <div class="ttl">${escapeHTML(title)}</div>
+      <div class="sub">${escapeHTML(missing ? '文件不存在或不在媒体库范围内' : sub)}</div>
+    </div>
+    <div class="acts">
+      <button class="btn primary" id="bSys">用系统播放器打开</button>
+      <button class="btn" id="bReveal">在资源管理器中定位</button>
+      <button class="btn" id="bClose">关闭标签页</button>
+    </div>
+  </div>
+  <div class="stage">
+    ${missing || !native ? '' : `<video id="v" controls playsinline autoplay preload="metadata" src="${escapeHTML(streamURL)}"></video>`}
+    <div class="err${missing || !native ? ' on' : ''}" id="err">
+      <h2>${missing ? '找不到这个文件' : '浏览器无法播放这个文件'}</h2>
+      <p>${missing
+        ? '它可能已被移动或删除，请在播放器主页面重新扫描后再试。'
+        : `浏览器解不了 <b>.${escapeHTML(String((t && t.ext) || '').toUpperCase())}</b> 这类容器（常见于 MKV / RMVB / AVI / WMV）。
+           点上方 <b>用系统播放器打开</b>，交给本机播放器处理，字幕与多音轨都会正常。`}
+      </p>
+      <button class="btn primary" id="eSys">用系统播放器打开</button>
+    </div>
+  </div>
+<script>
+(function () {
+  var ID = ${JSON.stringify(id || '')};
+  var v = document.getElementById('v');
+  var err = document.getElementById('err');
+
+  function post(path, done) {
+    fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: ID }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { done && done(j); })
+      .catch(function () { done && done({ ok: false }); });
+  }
+  function sys() { post('/api/open'); }
+  function reveal() { post('/api/reveal'); }
+  function closeTab() { window.close(); setTimeout(function () { history.back(); }, 120); }
+
+  document.getElementById('bSys').onclick = sys;
+  document.getElementById('bReveal').onclick = reveal;
+  document.getElementById('bClose').onclick = closeTab;
+  document.getElementById('eSys').onclick = sys;
+
+  if (v) {
+    // 自动播放可能被浏览器策略拦下（新标签页仍算用户手势发起，通常放行）；
+    // 万一被拦，原生控件就在下面，点一下即可，不做多余打扰。
+    v.addEventListener('error', function () { err.classList.add('on'); });
+    var p = v.play();
+    if (p && p.catch) p.catch(function () {});
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeTab();
+  });
+})();
+</script>
+</body>
+</html>`;
+}
+
 /** 将请求解析为媒体库内的绝对路径，拒绝越权访问 */
 function resolveMediaPath(idOrPath) {
   if (!idOrPath) return null;
@@ -1040,6 +1179,12 @@ const server = http.createServer(async (req, res) => {
       const buf = fs.readFileSync(file);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': buf.length, 'Cache-Control': 'no-store' });
       return res.end(buf);
+    }
+
+    /* ---- 视频播放页（首页点视频 → 新标签页打开） ---- */
+    if (p === '/play' || p === '/play/') {
+      const id = u.searchParams.get('id') || '';
+      return sendHTML(res, 200, playPageHTML(resolveMediaPath(id), id));
     }
 
     /* ---- 媒体库索引（首次访问时若尚无索引，则启动后台扫描并告知前端轮询） ---- */
