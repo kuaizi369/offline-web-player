@@ -23,7 +23,7 @@ const EXAMPLE_CONFIG_PATH = path.join(APP_DIR, 'config.example.json');
 /* ────────────────────────────  应用信息  ────────────────────────────
    版本号与仓库地址的唯一来源：页面上「关于」区块从这里取，改版本只改这里。 */
 const APP_NAME = '离线音乐与视频播放器';
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.3.1';
 const APP_REPO = 'https://github.com/kuaizi369/offline-web-player';
 const APP_AUTHOR = '筷子';
 
