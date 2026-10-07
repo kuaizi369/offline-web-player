@@ -219,6 +219,8 @@ body.resizing-v .vsplit{pointer-events:auto}
   background:var(--bg);
   margin:-22px -22px 0;padding:14px 22px 10px;
   border-bottom:1px solid var(--line);
+  /* 底边外侧补 1px 同色，兜住亚像素缝隙，避免滚动内容从缝里透出来 */
+  box-shadow:0 1px 0 var(--bg);
 }
 .tagbar .chip{cursor:pointer;transition:.15s;font-size:11.5px;padding:4px 11px}
 .tagbar .chip:hover{border-color:var(--line-strong);color:var(--text)}
@@ -1165,8 +1167,11 @@ function renderTagbar() {
     所以这里按实际高度算，而不是写死。 */
 const CONTENT_PAD = 22;            // .content 的 padding-top，sticky 的 0 基准
 function syncStickyOffset() {
-  const h = tagbarEl ? tagbarEl.offsetHeight : 0;
-  document.documentElement.style.setProperty('--thead-top', (h - CONTENT_PAD) + 'px');
+  // 用 getBoundingClientRect 而非 offsetHeight：后者会取整，
+  // 标签栏真实高度常是 86.5 这类小数，取整后表头会低 0.5px，
+  // 滚动时那半像素里会透出歌曲行，看着像一条缝。再上移 1px 做重叠，彻底封死。
+  const h = tagbarEl ? tagbarEl.getBoundingClientRect().height : 0;
+  document.documentElement.style.setProperty('--thead-top', (h - CONTENT_PAD - 1) + 'px');
 }
 let tagbarRO = null;
 function watchTagbar() {
