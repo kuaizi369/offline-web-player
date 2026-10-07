@@ -226,10 +226,13 @@ body.resizing-v .vsplit{pointer-events:auto}
 /* 列表 */
 .tlist{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
 .tlist thead th{
-  position:sticky;top:0;z-index:3;
+  /* 钉在「智能标签栏」正下方：--thead-top 由 JS 按标签栏实际高度算
+     （标签栏 chips 换行时高度会变，写死会错位）。z-index 低于标签栏，避免盖住它。 */
+  position:sticky;top:var(--thead-top,-22px);z-index:4;
   background:var(--bg);border-bottom:1px solid var(--line);
   font-size:11px;font-weight:500;color:var(--muted);text-align:left;
   padding:9px 12px;letter-spacing:.4px;
+  box-shadow:0 1px 0 var(--line);   /* sticky 时 border 会跟着滚，用阴影兜底分隔线 */
 }
 .tlist thead th.num{text-align:right}
 .tlist td{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.035);font-size:13px;vertical-align:middle}
@@ -1157,6 +1160,22 @@ function renderTagbar() {
   tagbarEl = bar;
 }
 
+/** 表头 sticky 的偏移量：让表头钉在标签栏正下方。
+    标签栏自身钉在内容区最上沿（top:-22px），高度随 chips 换行而变，
+    所以这里按实际高度算，而不是写死。 */
+const CONTENT_PAD = 22;            // .content 的 padding-top，sticky 的 0 基准
+function syncStickyOffset() {
+  const h = tagbarEl ? tagbarEl.offsetHeight : 0;
+  document.documentElement.style.setProperty('--thead-top', (h - CONTENT_PAD) + 'px');
+}
+let tagbarRO = null;
+function watchTagbar() {
+  if (tagbarRO) { tagbarRO.disconnect(); tagbarRO = null; }
+  if (!tagbarEl || typeof ResizeObserver === 'undefined') return;
+  tagbarRO = new ResizeObserver(() => syncStickyOffset());
+  tagbarRO.observe(tagbarEl);
+}
+
 /* ══════════════════  筛选  ══════════════════ */
 function computeFiltered() {
   const q = S.q.trim().toLowerCase();
@@ -1201,6 +1220,8 @@ function render() {
 
   renderTagbar();
   if (tagbarEl) content.appendChild(tagbarEl);
+  syncStickyOffset();          // 标签栏入场后才能量到真实高度
+  watchTagbar();
 
   if (!list.length) {
     content.insertAdjacentHTML('beforeend', `
@@ -1386,6 +1407,7 @@ function renderList(content, list, insideAlbum = false) {
     <tbody id="tbody"></tbody>
   </table>`;
   content.appendChild(wrap);
+  syncStickyOffset();          // 表头入场后按当前标签栏高度重新定位
 
   // 分批渲染：两千多行一次性塞进 DOM 会明显卡顿，改为滚动到阈值时追加下一批。
   const tbody = $('#tbody', wrap);
