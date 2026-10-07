@@ -25,7 +25,6 @@
   --r-s:8px; --r-m:12px; --r-l:18px;
   --ease:cubic-bezier(.32,.72,0,1);
   --side-w:264px;   /* 侧栏宽度，可拖拽右侧边缘调整，双击复位 */
-  --pane-nav:160px;  /* 侧栏「媒体分类」区高度，拖分隔条调整 */
   --pane-root:164px; /* 侧栏内「扫描目录」区高度，拖分隔条调整 */
   --pane-genre:150px;/* 侧栏内「曲风」区高度，拖分隔条调整 */
 }
@@ -86,19 +85,30 @@ body.resizing-v .vsplit{pointer-events:auto}
 .brand-txt strong{display:block;font-size:13.5px;font-weight:600;letter-spacing:.2px}
 .brand-txt span{font-size:11px;color:var(--muted)}
 
-.nav{padding:0 10px;flex:none;height:var(--pane-nav);min-height:0;overflow-y:auto}
-.nav-label{font-size:11px;color:var(--muted);padding:14px 10px 6px;letter-spacing:.6px;font-weight:500}
-.nav-item{
-  display:flex;align-items:center;gap:10px;width:100%;
-  padding:8px 10px;border-radius:var(--r-s);
-  color:var(--text-2);font-size:13px;text-align:left;
-  transition:background .15s,color .15s;
+/* 关于：作者 / 版本 / 仓库地址 */
+.about{
+  flex:none;margin:2px 12px 6px;padding:10px 12px 9px;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-m);
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 10px;align-items:center;
 }
-.nav-item:hover{background:var(--panel-2);color:var(--text)}
-.nav-item.on{background:var(--accent-soft);color:#C9BCFF}
-.nav-item.on .nav-dot{background:var(--accent)}
-.nav-dot{width:6px;height:6px;border-radius:50%;background:var(--line-strong);flex:none;transition:background .15s}
-.nav-item .cnt{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.about .ab-k{font-size:11px;color:var(--muted);letter-spacing:.4px;white-space:nowrap}
+.about .ab-v{
+  font-size:12px;color:var(--text-2);text-align:right;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.about .ab-v.num{font-variant-numeric:tabular-nums;color:var(--text)}
+.about .ab-repo{
+  grid-column:1/-1;display:flex;align-items:center;gap:7px;min-width:0;
+  margin-top:3px;padding-top:8px;border-top:1px solid var(--line);
+  color:var(--text-2);font-size:12px;text-decoration:none;transition:color .15s;
+}
+.about .ab-repo:hover{color:#C9BCFF}
+.about .ab-repo svg{width:14px;height:14px;flex:none}
+.about .ab-repo .ab-url{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.about .ab-repo .ab-ext{width:11px;height:11px;flex:none;opacity:.55}
+.about .ab-repo:hover .ab-ext{opacity:.9}
+
+.nav-label{font-size:11px;color:var(--muted);padding:14px 10px 6px;letter-spacing:.6px;font-weight:500}
 
 /* 专辑列表 */
 .album-scroll{flex:1;min-height:0;overflow-y:auto;padding:0 10px 16px}
@@ -555,8 +565,16 @@ body.resizing-v .vsplit{pointer-events:auto}
       </div>
     </div>
 
-    <nav class="nav" id="nav"></nav>
-    <div class="vsplit" data-vs="nav" title="上下拖动调整「媒体分类」与「扫描目录」的高度 · 双击复位全部分区"></div>
+    <div class="about">
+      <span class="ab-k">作者</span><span class="ab-v" id="abAuthor">筷子</span>
+      <span class="ab-k">版本</span><span class="ab-v num" id="abVersion">—</span>
+      <a class="ab-repo" id="abRepo" href="https://github.com/kuaizi369/offline-web-player"
+         target="_blank" rel="noopener noreferrer" title="在浏览器中打开 GitHub 仓库">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.35-1.29-1.71-1.29-1.71-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.7 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.81 1.18 1.84 1.18 3.1 0 4.43-2.69 5.4-5.25 5.69.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12A11.5 11.5 0 0 0 12 .5Z"/></svg>
+        <span class="ab-url" id="abRepoUrl">kuaizi369/offline-web-player</span>
+        <svg class="ab-ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+      </a>
+    </div>
 
     <div class="nav-label lbl-row" style="padding:16px 10px 6px">
       <span>扫描目录</span>
@@ -838,7 +856,6 @@ const S = {
   lib: null,
   tracks: [],
   view: localStorage.getItem('pv.view') || 'list',
-  group: '全部',
   root: null,         // 按扫描目录筛选（值为 rootLabel）
   albumId: null,
   genre: null,        // 曲风筛选（'__unknown' = 未识别）
@@ -969,9 +986,8 @@ function applyLibrary(lib, opts = {}) {
     S.queue = S.queue.filter((id) => valid.has(id));
   }
 
-  // 扫描范围变了之后，之前选中的目录 / 分类 / 专辑 / 曲风可能已经不存在 —— 回退，避免看到空白页
+  // 扫描范围变了之后，之前选中的目录 / 专辑 / 曲风可能已经不存在 —— 回退，避免看到空白页
   if (S.root && !lib.roots.some((r) => r.label === S.root)) S.root = null;
-  if (S.group !== '全部' && !lib.groups.some((g) => g.name === S.group)) S.group = '全部';
   if (S.albumId && !lib.albums.some((a) => a.id === S.albumId)) S.albumId = null;
   if (S.genre && !(lib.genres || []).some((g) => g.id === S.genre)) S.genre = null;
 
@@ -983,7 +999,7 @@ function applyLibrary(lib, opts = {}) {
   rebuildOrder();
   if (S.cur) S.pos = S.order.indexOf(S.queue.indexOf(S.cur.id));
 
-  buildNav();
+  buildSidebar();
   render();
   renderQueue();
   updateBadge();
@@ -998,6 +1014,7 @@ async function boot() {
     if (!r.ok) throw new Error('no service');
     const info = await r.json();
     serviceMode = true;
+    applyAppInfo(info);                       // 侧栏「关于」：作者 / 版本 / 仓库
     if (info.systemPlayer) {
       sysPlayerName = info.systemPlayer;
       $('#sysOpen').title = `用 ${sysPlayerName} 打开`;
@@ -1074,31 +1091,23 @@ function buildRoots() {
   $('#rootReset').style.opacity = (isDefault && one) ? '.5' : '';
 }
 
-function buildNav() {
-  const groups = S.lib.groups;
-  const order = ['音乐', '视频'];
-  const names = [...order.filter((n) => groups.some((g) => g.name === n)),
-                 ...groups.map((g) => g.name).filter((n) => !order.includes(n))];
-
-  const total = S.lib.stats.total;
-  const items = [{ name: '全部', count: total, audio: S.lib.stats.audio, video: S.lib.stats.video }];
-  for (const n of names) {
-    const g = groups.find((x) => x.name === n);
-    items.push({ name: n, count: g.count, audio: g.audio, video: g.video });
+/** 「关于」区块：作者 / 版本 / 仓库地址。版本号取自服务端 /api/ping，
+    不在前端写死，避免两处版本号各说各话。 */
+function applyAppInfo(info) {
+  if (!info) return;
+  if (info.author) $('#abAuthor').textContent = info.author;
+  if (info.version) $('#abVersion').textContent = 'v' + info.version;
+  if (info.repo) {
+    const a = $('#abRepo');
+    a.href = info.repo;
+    a.title = '在浏览器中打开 ' + info.repo;
+    // 侧栏窄，链接文字只显示「用户名/仓库名」，完整地址放悬停提示
+    const m = String(info.repo).match(/^https?:\/\/(?:www\.)?github\.com\/(.+)$/i);
+    $('#abRepoUrl').textContent = m ? m[1].replace(/\/+$/, '') : String(info.repo).replace(/^https?:\/\//i, '');
   }
+}
 
-  $('#nav').innerHTML = `<div class="nav-label">媒体分类</div>` + items.map((it) => `
-    <button class="nav-item ${S.group === it.name ? 'on' : ''}" data-group="${esc(it.name)}">
-      <span class="nav-dot"></span>
-      <span>${esc(it.name)}</span>
-      <span class="cnt">${it.count}</span>
-    </button>`).join('');
-
-  $$('#nav .nav-item').forEach((b) => b.onclick = () => {
-    S.group = b.dataset.group; S.albumId = null; S.genre = null;
-    buildNav(); render();
-  });
-
+function buildSidebar() {
   const s = S.lib.stats;
   $('#sideStat').textContent = `${s.total} 个文件 · ${s.albums} 个专辑`;
 
@@ -1118,13 +1127,12 @@ function buildNav() {
   $$('#genreNav .album-pill').forEach((b) => b.onclick = () => {
     const id = b.dataset.genre;
     S.genre = S.genre === id ? null : id;
-    if (S.genre) { S.group = '音乐'; S.albumId = null; }   // 曲风只作用于音频
-    buildNav(); render();
+    if (S.genre) S.albumId = null;
+    buildSidebar(); render();
   });
 
-  // 专辑列表：随大类 + 曲风联动
+  // 专辑列表：随曲风联动
   const albums = S.lib.albums.filter((a) =>
-    (S.group === '全部' || a.group === S.group) &&
     (!S.genre || (S.genre === '__unknown' ? !a.genre : a.genre === S.genre)));
   $('#albumNav').innerHTML = albums.map((a) => `
     <button class="album-pill ${S.albumId === a.id ? 'on' : ''}" data-album="${a.id}" title="${esc(a.rootLabel + ' / ' + a.fullPath)}">
@@ -1135,7 +1143,7 @@ function buildNav() {
 
   $$('#albumNav .album-pill').forEach((b) => b.onclick = () => {
     S.albumId = S.albumId === b.dataset.album ? null : b.dataset.album;
-    buildNav(); render();
+    buildSidebar(); render();
   });
 }
 
@@ -1188,7 +1196,6 @@ function computeFiltered() {
 
   let list = S.tracks.filter((t) => {
     if (S.root && t.rootLabel !== S.root) return false;
-    if (S.group !== '全部' && t.group !== S.group) return false;
     if (S.albumId && t.albumId !== S.albumId) return false;
     if (S.genre && (S.genre === '__unknown' ? !!t.genre : t.genre !== S.genre)) return false;
     if (S.kind !== 'all' && t.kind !== S.kind) return false;
@@ -1280,11 +1287,11 @@ function renderAlbums(content, list) {
 
     // 单击进入专辑，双击直接播放整张
     $$('.card', content).forEach((el) => {
-      el.onclick = () => { S.albumId = el.dataset.album; buildNav(); render(); };
+      el.onclick = () => { S.albumId = el.dataset.album; buildSidebar(); render(); };
       el.ondblclick = (e) => {
         e.preventDefault();
         S.albumId = el.dataset.album;
-        buildNav(); render();
+        buildSidebar(); render();
         setTimeout(() => playAlbum(el.dataset.album), 60);
       };
     });
@@ -2316,14 +2323,14 @@ function setSideW(px, persist) {
 })();
 
 /* ══════════════════  侧栏内分区高度拖拽  ══════════════════
-   侧栏纵向：媒体分类(nav) / 扫描目录(root) / 曲风(genre) 三个定高分区，
-   专辑·文件夹(album) 自动吃掉剩余高度。三条边界各自可拖：
+   侧栏纵向：扫描目录(root) / 曲风(genre) 两个定高分区，
+   专辑·文件夹(album) 自动吃掉剩余高度。两条边界各自可拖：
    拖某条边界 = 调整它上方分区的高度，空间向下方分区依次借（压到下限为止）。 */
-const PANE_ORDER = ['nav', 'root', 'genre'];
-const PANE_MIN  = { nav: 56, root: 56, genre: 56 };    // 各分区最小高度
-const PANE_DEF  = { nav: 160, root: 164, genre: 150 }; // 双击复位值
+const PANE_ORDER = ['root', 'genre'];
+const PANE_MIN  = { root: 56, genre: 56 };    // 各分区最小高度
+const PANE_DEF  = { root: 164, genre: 150 };  // 双击复位值
 const PANE_ALBUM_MIN = 92;                      // 末区最小高度，保证不会被压没
-const PANE_EL    = { nav: $('#nav'), root: $('#rootNav'), genre: $('#genreNav') };
+const PANE_EL    = { root: $('#rootNav'), genre: $('#genreNav') };
 const PANE_ALBUM = $('#albumNav');
 const PANE = { ...PANE_DEF };   // 当前高度（唯一数据源）
 
@@ -2332,7 +2339,7 @@ function setPaneH(key, px) {
   PANE[key] = v;
   document.documentElement.style.setProperty('--pane-' + key, v + 'px');
 }
-/** 三区可用总高 = 侧栏高 - 品牌区/媒体分类/标题行/按钮等固定占用
+/** 三区可用总高 = 侧栏高 - 品牌区/关于区/标题行/按钮等固定占用
     注意：必须跳过 position:absolute/fixed 的子元素 —— 宽度手柄 .side-grip 是
     top:0;bottom:0，offsetHeight 等于整个侧栏高，算进去会把可用高度压成 0。 */
 function paneAvail() {
@@ -2342,7 +2349,7 @@ function paneAvail() {
   if (!sideH) return 0;                                    // 侧栏尚未布局（隐藏/未渲染）
   let fixed = 0;
   Array.prototype.forEach.call(side.children, (c) => {
-    if (c === PANE_EL.nav || c === PANE_EL.root || c === PANE_EL.genre || c === PANE_ALBUM) return;
+    if (c === PANE_EL.root || c === PANE_EL.genre || c === PANE_ALBUM) return;
     const cs = getComputedStyle(c);
     if (cs.position === 'absolute' || cs.position === 'fixed') return;   // 脱离文档流，不占高度
     // 连 margin 一起算：分隔条用了负 margin 收间距，漏算会让可用高度偏小
@@ -2353,9 +2360,9 @@ function paneAvail() {
 }
 
 function savePanes() {
-  localStorage.setItem('pv.paneH', JSON.stringify({
-    nav: PANE.nav, root: PANE.root, genre: PANE.genre
-  }));
+  const o = {};
+  for (const k of PANE_ORDER) o[k] = PANE[k];
+  localStorage.setItem('pv.paneH', JSON.stringify(o));   // 旧版本含 nav 字段，读时忽略即可
 }
 function restorePanes() {
   try {
@@ -2458,12 +2465,6 @@ window.addEventListener('resize', clampPanes);
 // 首次布局完成后再夹一次（恢复的高度可能超出当前窗口）
 if (document.readyState === 'complete') clampPanes();
 else window.addEventListener('load', clampPanes);
-// 「媒体分类」列表是拿到媒体库后才渲染的，晚于上面的 load；
-// 它长高会挤走三区的空间，所以盯着它的尺寸变化重新夹一次
-if (window.ResizeObserver) {
-  const nav = $('#nav');
-  if (nav) new ResizeObserver(() => clampPanes()).observe(nav);
-}
 
 /* ── 键盘快捷键 ── */
 document.addEventListener('keydown', (e) => {

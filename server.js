@@ -20,6 +20,13 @@ const APP_DIR = __dirname;
 const CONFIG_PATH = path.join(APP_DIR, 'config.json');
 const EXAMPLE_CONFIG_PATH = path.join(APP_DIR, 'config.example.json');
 
+/* ────────────────────────────  应用信息  ────────────────────────────
+   版本号与仓库地址的唯一来源：页面上「关于」区块从这里取，改版本只改这里。 */
+const APP_NAME = '离线音乐与视频播放器';
+const APP_VERSION = '0.2.0';
+const APP_REPO = 'https://github.com/kuaizi369/offline-web-player';
+const APP_AUTHOR = '筷子';
+
 /* ────────────────────────────  配置  ──────────────────────────── */
 
 const DEFAULT_CONFIG = {
@@ -1154,8 +1161,10 @@ const server = http.createServer(async (req, res) => {
       const sp = String(CONFIG.systemPlayer || '').trim();
       return sendJSON(res, 200, {
         ok: true,
-        app: '离线音乐与视频播放器',
-        version: '1.1.0',
+        app: APP_NAME,
+        version: APP_VERSION,
+        repo: APP_REPO,
+        author: APP_AUTHOR,
         platform: process.platform,
         node: process.version,
         indexed: LIBRARY ? LIBRARY.stats.total : 0,
@@ -1318,7 +1327,7 @@ function openBrowser(url) {
 function banner() {
   const line = '─'.repeat(58);
   console.log('\n' + line);
-  console.log('  🎵  离线音乐与视频播放器   已启动');
+  console.log('  🎵  ' + APP_NAME + '   v' + APP_VERSION + '   已启动');
   console.log(line);
   if (LIBRARY) {
     const s = LIBRARY.stats;
@@ -1344,7 +1353,7 @@ function probeExisting(port) {
       res.setEncoding('utf8');
       res.on('data', (c) => { data += c; if (data.length > 8192) req.destroy(); });
       res.on('end', () => {
-        try { resolve(JSON.parse(data).app === '离线音乐与视频播放器'); }
+        try { resolve(JSON.parse(data).app === APP_NAME); }
         catch { resolve(false); }
       });
     });
