@@ -13,7 +13,7 @@
   "scanOnStart": true,
 
   "//systemPlayer": "「系统播放」按钮调用的播放器完整路径。留空字符串则改用系统文件关联的默认程序。",
-  "//systemPlayer.example": "Windows 例：\"D:/Apps/PotPlayer/MiniPlayer64.exe\"；macOS 例：\"/Applications/VLC.app/Contents/MacOS/VLC\"。播放器装在 C 盘 Program Files 下通常无需填写，留空走文件关联即可。",
+  "//systemPlayer.example": "Windows 例：\"C:/Program Files/VideoLAN/VLC/vlc.exe\"；macOS 例：\"/Applications/VLC.app/Contents/MacOS/VLC\"。播放器装在 C 盘 Program Files 下通常无需填写，留空走文件关联即可。",
   "systemPlayer": "",
 
   "//roots": "媒体库根目录。留空数组 = 只扫描本程序所在目录及其子目录。也可以在页面上点「＋ 添加目录」可视化选择，无需手动编辑。",

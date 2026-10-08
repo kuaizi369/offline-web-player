@@ -136,9 +136,12 @@ const VIDEO_EXT = new Set([
   'm4v', 'mpg', 'mpeg', '3gp', 'vob', 'm2ts', 'f4v', 'asf', 'ogv', 'divx'
 ]);
 
-/** 浏览器内置播放器可直接解码的容器（用于界面上提示） */
+/** 浏览器内置播放器可直接解码的容器（用于界面上提示）
+ *  mkv 是实测加进来的：Chrome 154 对 video/x-matroska（含 codecs="hvc1..."）返回 probably，
+ *  真机播 1080p HEVC+AAC 的 Matroska 能连续解出画面帧。库里 48 部电影都是这种，
+ *  归到 native 就等于一次转换都不用做。放不出来时播放页还有兜底重编码，不会卡死。 */
 const NATIVE_AUDIO = new Set(['mp3', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'flac', 'webm']);
-const NATIVE_VIDEO = new Set(['mp4', 'm4v', 'webm', 'ogv', 'mov']);
+const NATIVE_VIDEO = new Set(['mp4', 'm4v', 'webm', 'ogv', 'mov', 'mkv']);
 
 const MIME = {
   mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav',
@@ -1026,7 +1029,30 @@ const WEB_VIDEO_CODECS = new Set(['h264', 'vp8', 'vp9', 'av1', 'theora']);
 const WEB_AUDIO_CODECS = new Set(['aac', 'mp3', 'opus', 'vorbis']);
 
 const JOBS = new Map();                     // trackId -> { state, progress, mode, message, error }
+
+/**
+ * 当前浏览器上报的解码能力。播放页会用 MediaCapabilities 探测 HEVC 硬解后 POST 上来。
+ * 未知（null）按「不支持」处理 —— 宁可多花几分钟重编码，也不要给浏览器一个放不了的文件。
+ */
+const CAPS = { hevc: null };
 const FF = { checked: false, ok: false, version: '' };
+
+/**
+ * 能不能只换容器（-c copy）而不重编码。
+ *
+ * 视频和音频都得落在浏览器真能解的集合里。HEVC 不在通用集合里，但如果浏览器自报能硬解
+ * 就能直接播 —— 本机库里那 48 部 1080p 电影是 hevc+aac：重编码要几分钟，换容器只要一秒且无损。
+ *
+ * hevcOK 由调用方传入（转换请求里带的），拿不到时才退回 CAPS（/api/capabilities 上报值）。
+ * 之所以让它随请求走：能力探测和转换请求是两个网络往返，靠全局状态会撞上竞态。
+ */
+function canStreamCopy(probe, hevcOK) {
+  if (!probe || !probe.vcodec) return false;
+  const hevc = (hevcOK === undefined) ? (CAPS.hevc === true) : (hevcOK === true);
+  const vOK = WEB_VIDEO_CODECS.has(probe.vcodec) || (probe.vcodec === 'hevc' && hevc);
+  if (!vOK) return false;
+  return !probe.acodec || WEB_AUDIO_CODECS.has(probe.acodec);
+}
 let runningJobs = 0;
 const jobQueue = [];
 
@@ -1266,15 +1292,25 @@ function jobSnapshot(track, abs) {
   };
 }
 
-/** 确保某个视频有「浏览器能播的版本」；幂等，重复调用只返回进度 */
-async function ensurePlayable(track, abs) {
+/**
+ * 确保某个视频有「浏览器能播的版本」；幂等，重复调用只返回进度。
+ * opts.force === 'transcode'：把已有产物丢掉、这次无论如何都重编码。
+ * 播放页在「换出来的文件浏览器放不出来」时会这样重试一次（见 /play 的兜底逻辑）。
+ */
+async function ensurePlayable(track, abs, opts) {
   const out = cachePathFor(track, abs);
-  if (fs.existsSync(out)) return jobSnapshot(track, abs);
+  const forceTranscode = !!(opts && opts.force === 'transcode');
+
+  if (forceTranscode) {
+    if (dropCacheFor(track, abs) === 'busy') return jobSnapshot(track, abs);   // 正在转/正在播，别硬删
+  } else if (fs.existsSync(out)) {
+    return jobSnapshot(track, abs);
+  }
   if (!TRANSCODE_ENABLED) return jobSnapshot(track, abs);
 
   const existing = JOBS.get(track.id);
   if (existing && (existing.state === 'running' || existing.state === 'queued')) return jobSnapshot(track, abs);
-  if (existing && existing.state === 'unsupported') return jobSnapshot(track, abs);
+  if (!forceTranscode && existing && existing.state === 'unsupported') return jobSnapshot(track, abs);
 
   if (!(await ffmpegAvailable())) {
     JOBS.set(track.id, { state: 'unsupported', progress: 0, message: '本机没有找到 ffmpeg，无法在浏览器中播放' });
@@ -1287,8 +1323,7 @@ async function ensurePlayable(track, abs) {
     return jobSnapshot(track, abs);
   }
 
-  const mode = (WEB_VIDEO_CODECS.has(probe.vcodec) && (!probe.acodec || WEB_AUDIO_CODECS.has(probe.acodec)))
-    ? 'remux' : 'transcode';
+  const mode = (!forceTranscode && canStreamCopy(probe, opts && opts.hevc)) ? 'remux' : 'transcode';
 
   JOBS.set(track.id, {
     state: 'queued', progress: 0, mode,
@@ -1381,14 +1416,13 @@ function playPageHTML(abs, id) {
   </div>
   <div class="stage">
     ${missing ? '' : `<video id="v" controls playsinline autoplay preload="metadata"${direct ? ` src="${escapeHTML(streamURL)}"` : ' style="display:none"'}></video>`}
-    ${needConvert ? `
-    <div class="prep" id="prep">
+    <div class="prep" id="prep"${needConvert ? '' : ' style="display:none"'}>
       <div class="ring"></div>
       <h2 id="pTitle">正在准备在浏览器中播放…</h2>
       <div class="pbar"><i id="pfill"></i></div>
       <p class="pmsg" id="pmsg">正在分析文件…</p>
-      <p class="phint">这个容器的编码浏览器解不了，需要先转成浏览器能播的 MP4。<br>只转这一次，之后点开就是秒播。</p>
-    </div>` : ''}
+      <p class="phint" id="phint">这个容器的编码浏览器解不了，需要先转成浏览器能播的 MP4。<br>只转这一次，之后点开就是秒播。</p>
+    </div>
     <div class="err${missing ? ' on' : ''}" id="err">
       <h2>${missing ? '找不到这个文件' : '浏览器无法播放这个文件'}</h2>
       <p>${missing
@@ -1408,9 +1442,10 @@ function playPageHTML(abs, id) {
   var err = document.getElementById('err');
   var prep = document.getElementById('prep');
 
-  function post(path, done) {
-    fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: ID }) })
+  function post(path, body, done) {          // 也支持 post(path, done)；必须 return，调用方要串行等待
+    if (typeof body === 'function') { done = body; body = null; }
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ id: ID }, body || {})) })
       .then(function (r) { return r.json(); })
       .then(function (j) { done && done(j); })
       .catch(function () { done && done({ ok: false }); });
@@ -1426,7 +1461,7 @@ function playPageHTML(abs, id) {
 
   function playIt() {
     if (!v) return;
-    v.addEventListener('error', function () { err.classList.add('on'); });
+    v.addEventListener('error', function () { onMediaFail(); });
     // 自动播放可能被浏览器策略拦下，万一被拦原生控件就在下面，点一下即可
     var pr = v.play();
     if (pr && pr.catch) pr.catch(function () {});
@@ -1442,22 +1477,91 @@ function playPageHTML(abs, id) {
 
   function mount() {
     if (!v) return;
+    sawFrame = false;          // 换了新的 src，之前那次「出过画」的结论作废
+    frameArmed = false;
     v.style.display = '';
     v.src = '/api/stream?id=' + encodeURIComponent(ID);
     if (prep) prep.style.display = 'none';
+    err.classList.remove('on');
     playIt();
+    watchPlayback();
   }
 
-  if (HAS_SRC) {
-    playIt();
-  } else if (!MISSING) {
-    // 浏览器解不了这个容器：请服务端准备一个能播的版本，边转边报进度，好了自动换播放器
+  function setText(id, s) { var el = document.getElementById(id); if (el) el.textContent = s; }
+
+  /* ── 兜底：产物在，但当前浏览器放不出来 ──
+     两种常见情形：① 上一份产物是按「本机支持 HEVC 硬解」换容器换出来的，换台机器或换浏览器就解不了；
+     ② 扩展名看着能播（.mkv / .mp4），里面装的却是这台浏览器没有解码器的编码。
+     这类失败不一定触发 error 事件（容器能解析、拿不到解码器时画面永远是黑的），
+     所以除了 error，还要盯「有没有真的呈现出一帧画面」，失败就让服务端丢掉产物重编码成 H.264。
+
+     两个必须避开的误判（实测踩过，代价是白跑几分钟重编码、还删掉好产物）：
+       · 页面在后台或被遮挡：Chrome 会整个挂起媒体加载 —— 一个字节都不请求，networkState 停在 LOADING，
+         没有任何画面。这不是编码问题，绝不能判失败。
+       · 自动播放被拦下：paused 期间一帧都不会有，同样与编码无关。
+     所以 document.hidden 或 v.paused 时只重新计时，不做判断。 */
+  var retried = false;
+  var watchTimer = null;
+  var sawFrame = false;         // 浏览器真的呈现过一帧画面 —— 播放成功的唯一硬证据
+  var frameArmed = false;
+  var hevcOK = null;            // 本机浏览器能不能硬解 HEVC；探测结果既上报也随转换请求带上
+
+  function onMediaFail() {
+    if (retried) {
+      return showError('浏览器无法播放这个文件',
+        '已经换成 H.264 重转过一次，仍然放不出来。点上方「用系统播放器打开」即可正常观看。');
+    }
+    retried = true;
+    clearTimeout(watchTimer);
+    try { if (v) { v.removeAttribute('src'); v.load(); } } catch (e) {}
+    if (v) v.style.display = 'none';
+    err.classList.remove('on');
+    if (prep) {
+      prep.style.display = '';
+      setText('pTitle', '这份文件浏览器放不出来，正在换一种编码重转…');
+      setText('phint', '本机浏览器解不了里面的画面，这次会重新编码成 H.264：慢一些，但一定能播。');
+    }
+    startConvert('transcode');
+  }
+
+  /* 让浏览器在「真的把一帧画面呈现出来」时回个信。比 videoWidth 可靠得多：
+     容器能解析、解码器缺失时 videoWidth 照样有值，画面却一直是黑的。 */
+  function armFrameWatch() {
+    if (frameArmed || sawFrame || !v || !v.requestVideoFrameCallback) return;
+    frameArmed = true;
+    try {
+      v.requestVideoFrameCallback(function () { sawFrame = true; clearTimeout(watchTimer); });
+    } catch (e) { frameArmed = false; }
+  }
+
+  function watchPlayback() {
+    armFrameWatch();
+    clearTimeout(watchTimer);
+    watchTimer = setTimeout(function () {
+      if (retried || sawFrame || !v || !v.src) return;
+      if (document.hidden || v.paused) return watchPlayback();    // 后台 / 还没开播 → 再等一轮，别误判
+      // 没有 requestVideoFrameCallback 的老浏览器只能退回最弱的判据
+      if (!v.requestVideoFrameCallback && (v.videoWidth > 0 || v.currentTime > 0.2)) return;
+      onMediaFail();
+    }, 6000);
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && !sawFrame) watchPlayback();
+  });
+
+  /* 请服务端准备一个能播的版本，边转边报进度，好了自动换上播放器。
+     force='transcode' 时服务端会丢掉已有产物、这次无论如何都重编码。 */
+  function startConvert(force) {
     var fails = 0;
-    var poll = function () {
-      post('/api/convert', function (j) {
+    var tick = function () {
+      var body = {};
+      if (hevcOK !== null) body.hevc = hevcOK;   // 能力随请求走，不依赖服务端的全局状态
+      if (force) body.force = force;
+      post('/api/convert', body, function (j) {
         if (!j || !j.state) {
           if (++fails > 6) return showError('无法连接本地服务', '请确认播放器服务仍在运行，然后刷新本页。');
-          return setTimeout(poll, 800);
+          return setTimeout(tick, 800);
         }
         fails = 0;
         if (j.state === 'ready') return mount();
@@ -1471,10 +1575,47 @@ function playPageHTML(abs, id) {
         var fill = document.getElementById('pfill'), msg = document.getElementById('pmsg');
         if (fill) fill.style.width = pct + '%';
         if (msg) msg.textContent = (j.message || '正在准备…') + ' ' + pct + '%';
-        setTimeout(poll, 700);
+        setTimeout(tick, 700);
       });
     };
-    poll();
+    tick();
+  }
+
+  /* 探测本机浏览器能不能硬解 HEVC：能 → 服务端只换容器（一秒、无损），不能 → 重编码成 H.264。
+     库里那 48 部 1080p 电影都是 HEVC，这一下差几百倍。
+     结果既上报给服务端，也随每次转换请求一起带上 —— 只靠全局状态会撞上竞态。 */
+  function probeCaps() {
+    var mc = navigator.mediaCapabilities;
+    var done = function (ok) {
+      hevcOK = !!ok;
+      return post('/api/capabilities', { hevc: hevcOK });
+    };
+    if (mc && mc.decodingInfo) {
+      return mc.decodingInfo({
+        type: 'file',
+        video: { contentType: 'video/mp4; codecs="hvc1.1.6.L120.90"',
+                 width: 1920, height: 1080, bitrate: 6000000, framerate: 24 }
+      }).then(function (r) {
+        // 只认硬件解码：软解 1080p 会卡，那种情况宁可重编码成 H.264
+        return done(r.supported && r.powerEfficient);
+      }).catch(function () { return done(false); });
+    }
+    var probe = document.createElement('video');
+    return done(probe.canPlayType('video/mp4; codecs="hvc1.1.6.L120.90"') === 'probably');
+  }
+
+  if (MISSING) {
+    // 无需处理：错误面板已经渲染好了
+  } else if (HAS_SRC) {
+    playIt();
+    watchPlayback();
+    probeCaps();                              // 顺手登记能力，之后的转换就不必重编码
+  } else {
+    // 探测万一卡住也别把转换拦住：最多等 1.2 秒就开转
+    var kicked = false;
+    var kick = function () { if (!kicked) { kicked = true; startConvert(); } };
+    probeCaps().then(kick);
+    setTimeout(kick, 1200);
   }
 
   document.addEventListener('keydown', function (e) {
@@ -1713,8 +1854,11 @@ const server = http.createServer(async (req, res) => {
       const id = u.searchParams.get('id');
       const abs = resolveMediaPath(id);
       if (!abs) { res.writeHead(404); return res.end('媒体不存在或不在媒体库范围内'); }
+      // raw=1：绕过转换产物、直接给原始文件。诊断用 —— 想知道「这个容器浏览器到底认不认」时，
+      // 拿产物去试会把结论带偏（产物必然是能播的 MP4）。.workbuddy/browserplaytest.js 靠它做实测。
+      const raw = u.searchParams.get('raw') === '1';
       const track = findTrack(id);
-      if (track && track.kind === 'video') {
+      if (!raw && track && track.kind === 'video') {
         const cached = cachePathFor(track, abs);
         if (fs.existsSync(cached)) return streamMedia(req, res, cached);
       }
@@ -1731,8 +1875,21 @@ const server = http.createServer(async (req, res) => {
         return sendJSON(res, 404, { ok: false, state: 'missing', progress: 0, message: '媒体不存在或不在媒体库范围内' });
       }
       if (req.method === 'GET') return sendJSON(res, 200, Object.assign({ ok: true }, jobSnapshot(track, abs)));
-      const snap = await ensurePlayable(track, abs);
+      const wantHevc = typeof body.hevc === 'boolean' ? body.hevc : undefined;
+      const snap = await ensurePlayable(track, abs, {
+        force: body.force,
+        hevc: wantHevc
+      });
       return sendJSON(res, 200, Object.assign({ ok: true }, snap));
+    }
+
+    /* ---- 浏览器解码能力上报（播放页探测 HEVC 硬解后 POST 上来）---- */
+    if (p === '/api/capabilities') {
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        if (typeof body.hevc === 'boolean') CAPS.hevc = body.hevc;
+      }
+      return sendJSON(res, 200, { ok: true, caps: CAPS });
     }
 
     /* ---- 转换缓存占用 / 清理 ---- */
