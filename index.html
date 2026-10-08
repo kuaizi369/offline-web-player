@@ -618,12 +618,20 @@ body.resizing-v .vsplit{pointer-events:auto}
 
     <div class="nav-label" style="padding:8px 20px 6px;display:flex;align-items:center;justify-content:space-between">
       <span>曲风</span>
-      <button class="gnbtn" id="genreSync" title="对「未识别」的歌曲联网查询曲风（iTunes 资料库，结果会缓存）">☁ 联网补全</button>
+      <span class="lbl-acts">
+        <button class="gnbtn" id="genreClear" title="取消曲风筛选，恢复全部曲风" hidden>✕ 取消</button>
+        <button class="gnbtn" id="genreSync" title="对「未识别」的歌曲联网查询曲风（iTunes 资料库，结果会缓存）">☁ 联网补全</button>
+      </span>
     </div>
     <div class="album-scroll pane-fixed" id="genreNav"></div>
     <div class="vsplit" data-vs="genre" title="上下拖动调整「曲风」与「专辑 / 文件夹」的高度 · 双击复位全部分区"></div>
 
-    <div class="nav-label" style="padding:8px 20px 6px">专辑 / 文件夹</div>
+    <div class="nav-label" style="padding:8px 20px 6px;display:flex;align-items:center;justify-content:space-between">
+      <span>专辑 / 文件夹</span>
+      <span class="lbl-acts">
+        <button class="gnbtn" id="albumClear" title="取消专辑 / 文件夹筛选，恢复全部专辑" hidden>✕ 取消</button>
+      </span>
+    </div>
     <div class="album-scroll pane-auto" id="albumNav"></div>
 
     <div class="side-grip" id="sideGrip" title="左右拖动调整宽度 · 双击恢复默认"></div>
@@ -1208,10 +1216,15 @@ function buildSidebar() {
 
   $$('#genreNav .album-pill').forEach((b) => b.onclick = () => {
     const id = b.dataset.genre;
-    S.genre = S.genre === id ? null : id;
+    S.genre = S.genre === id ? null : id;   // 再点一次同一项 = 取消
     if (S.genre) S.albumId = null;
     buildSidebar(); render();
   });
+
+  const gc = $('#genreClear');
+  gc.hidden = !S.genre;
+  gc.onclick = () => { S.genre = null; buildSidebar(); render(); };
+  revealPill($('#genreNav .album-pill.on'));
 
   // 专辑列表：随曲风联动
   const albums = S.lib.albums.filter((a) =>
@@ -1224,9 +1237,23 @@ function buildSidebar() {
     </button>`).join('') || `<div style="padding:14px 12px;color:var(--muted);font-size:12px">该分类下暂无专辑</div>`;
 
   $$('#albumNav .album-pill').forEach((b) => b.onclick = () => {
-    S.albumId = S.albumId === b.dataset.album ? null : b.dataset.album;
+    S.albumId = S.albumId === b.dataset.album ? null : b.dataset.album;   // 再点一次同一项 = 取消
     buildSidebar(); render();
   });
+
+  const ac = $('#albumClear');
+  ac.hidden = !S.albumId;
+  ac.onclick = () => { S.albumId = null; buildSidebar(); render(); };
+  revealPill($('#albumNav .album-pill.on'));
+}
+
+/** 把选中的 pill 滚进可视区。侧栏两个列表都是独立滚动区，选中项一旦滚出视野，
+    「再点一次取消」就点不到了 —— 所以每次重绘都要把它捞回来。
+    用 nearest：已经看得见时不动，避免无谓的跳动。 */
+function revealPill(el) {
+  if (el && el.scrollIntoView) {
+    try { el.scrollIntoView({ block: 'nearest' }); } catch (e) { /* 老浏览器忽略即可 */ }
+  }
 }
 
 let tagbarEl = null;
@@ -1239,17 +1266,36 @@ function renderTagbar() {
   bar.className = 'tagbar';
   bar.innerHTML =
     (S.root ? `<button class="chip on" data-rootclear="1" title="取消目录筛选">📁 ${esc(S.root)} ✕</button>` : '') +
+    activeFilterChips() +
     chips.map((t) => `
     <button class="chip ${S.tag === t.name ? 'on' : ''}" data-tag="${esc(t.name)}">
       ${esc(t.name)} <span style="opacity:.55">${t.count}</span>
     </button>`).join('') +
     (S.tag ? `<button class="chip" data-tag="">✕ 清除标签筛选</button>` : '');
   $$('.chip', bar).forEach((c) => c.onclick = () => {
+    if (c.dataset.clear === 'genre') { S.genre = null; buildSidebar(); render(); return; }
+    if (c.dataset.clear === 'album') { S.albumId = null; buildSidebar(); render(); return; }
     if (c.dataset.rootclear) { S.root = null; buildRoots(); render(); return; }
     S.tag = c.dataset.tag || null;
     render();
   });
   tagbarEl = bar;
+}
+
+/** 当前生效的「曲风 / 专辑」筛选，做成可点击取消的 chip。
+    侧栏那两个列表是滚动区，选中项滚出去后就没法「再点一次取消」了，
+    这里给一条始终可见的退路 —— 和目录筛选的 ✕ chip 保持一致。 */
+function activeFilterChips() {
+  let html = '';
+  if (S.genre) {
+    const name = S.genre === '__unknown' ? '未识别曲风' : (GENRE_NAME[S.genre] || S.genre);
+    html += `<button class="chip on" data-clear="genre" title="取消曲风筛选">🎵 ${esc(name)} ✕</button>`;
+  }
+  if (S.albumId) {
+    const a = S.lib.albums.find((x) => x.id === S.albumId);
+    if (a) html += `<button class="chip on" data-clear="album" title="取消专辑 / 文件夹筛选">💿 ${esc(a.name)} ✕</button>`;
+  }
+  return html;
 }
 
 /** 表头 sticky 的偏移量：让表头钉在标签栏正下方。
@@ -2537,6 +2583,10 @@ document.addEventListener('keydown', (e) => {
     else if ($('#dirModal').classList.contains('open')) $('#dirModal').classList.remove('open');
     else if ($('#drawer').classList.contains('open')) $('#drawer').classList.remove('open');
     else if (typing) e.target.blur();
+    // 没有弹窗要关的时候，Esc 逐级退出侧栏筛选（由内向外：专辑 → 曲风 → 目录）
+    else if (S.albumId) { S.albumId = null; buildSidebar(); render(); }
+    else if (S.genre)   { S.genre = null;   buildSidebar(); render(); }
+    else if (S.root)    { S.root = null;    buildRoots();   render(); }
     return;
   }
   if (typing) return;
